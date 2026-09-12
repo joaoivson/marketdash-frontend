@@ -36,6 +36,14 @@ export interface InstagramMediaItem {
   permalink: string | null;
   thumbnail_url: string | null;
   timestamp: string | null;
+  /** Já existe automação ATIVA cobrindo este post. */
+  tem_automacao: boolean;
+  /**
+   * A palavra que a própria legenda manda comentar ("Comente ALGODÃO para...").
+   * null quando a legenda não deixa afirmar — o backend recusa de propósito em
+   * vez de chutar, porque palavra errada = link errado para a cliente.
+   */
+  palavra_sugerida: string | null;
 }
 
 export interface InstagramMediaPage {
@@ -99,3 +107,41 @@ export type InstagramAutomationPayload = Pick<
   | "dm_botao_texto"
   | "status"
 >;
+
+// --------------------------------------------------------- criação em lote --
+
+export interface AutomacaoLoteItem {
+  media_id: string;
+  palavras: string[];
+  dm_link: string | null;
+  nome?: string | null;
+  media_thumbnail_url?: string | null;
+  media_caption_preview?: string | null;
+  media_permalink?: string | null;
+}
+
+/**
+ * O modelo vale para todos os itens; só a palavra e o link mudam por post.
+ * É essa separação que torna viável cobrir centenas de publicações.
+ */
+export interface AutomacaoLotePayload {
+  itens: AutomacaoLoteItem[];
+  dm_texto: string;
+  dm_botao_texto: string | null;
+  resposta_publica_ativa: boolean;
+  resposta_publica_variacoes: string[];
+  /** Somadas à palavra de cada post — atendem quem comenta "quero". */
+  palavras_comuns: string[];
+  status: AutomacaoStatus;
+}
+
+export interface AutomacaoLotePulada {
+  media_id: string;
+  motivo: string;
+}
+
+export interface AutomacaoLoteResultado {
+  criadas: InstagramAutomation[];
+  /** Nunca omitir na tela: é o post que continua sem responder comentário. */
+  puladas: AutomacaoLotePulada[];
+}

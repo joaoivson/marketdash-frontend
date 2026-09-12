@@ -1,6 +1,8 @@
 import { fetchWithAuth, getApiUrl } from "@/core/config/api.config";
 import { erroDaResposta } from "@/services/http-error";
 import type {
+  AutomacaoLotePayload,
+  AutomacaoLoteResultado,
   AutomacaoStatus,
   InstagramAutomation,
   InstagramAutomationPayload,
@@ -79,6 +81,18 @@ export const listAutomations = async (): Promise<InstagramAutomation[]> => {
   const res = await fetchWithAuth(getApiUrl(`${BASE}/automations`));
   if (!res.ok) throw await erroDaResposta(res, "Erro ao carregar as automações");
   return (await res.json()) as InstagramAutomation[];
+};
+
+export const createAutomationsInBatch = async (
+  payload: AutomacaoLotePayload,
+): Promise<AutomacaoLoteResultado> => {
+  const res = await fetchWithAuth(getApiUrl(`${BASE}/automations/lote`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw await erroDaResposta(res, "Erro ao criar as automações");
+  return (await res.json()) as AutomacaoLoteResultado;
 };
 
 export const getAutomation = async (id: number): Promise<InstagramAutomation> => {
