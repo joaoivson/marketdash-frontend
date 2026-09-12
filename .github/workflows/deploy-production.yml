@@ -6,12 +6,23 @@ on:
       - main
     paths-ignore:
       - '**.md'
+      - '.github/**'
       - '.gitignore'
       - 'README.md'
+
+# Homologação e produção compartilham o VPS de 4 vCPU com o backend, e o
+# Coolify constrói as imagens ali mesmo. Em 11/09/2026 dois builds simultâneos
+# levaram a CPU a 100% e a API de produção ficou ~20h fora. Grupo IGUAL nos
+# dois workflows para que um espere o outro.
+concurrency:
+  group: coolify-build-vps-frontend
+  cancel-in-progress: false
 
 jobs:
   validate:
     name: Validate Code
+    outputs:
+      bundle: ${{ steps.bundle.outputs.nome }}
     runs-on: ubuntu-latest
     
     steps:
@@ -39,6 +50,16 @@ jobs:
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL || 'https://api.marketdash.com.br' }}
 
+
+      # O nome do arquivo do Vite é hash do conteúdo: é a identidade do build
+      # deste commit, e serve de gabarito para conferir depois do deploy se o
+      # que está no ar é ESTE código ou o anterior.
+      - name: Registrar o bundle deste build
+        id: bundle
+        run: |
+          nome=$(ls dist/assets/index-*.js 2>/dev/null | head -1 | sed 's|^dist||')
+          echo "bundle deste commit: ${nome:-(não encontrado)}"
+          echo "nome=$nome" >> "$GITHUB_OUTPUT"
       - name: Check build artifacts
         run: |
           if [ ! -d "dist" ]; then
@@ -60,6 +81,15 @@ jobs:
       # Mesmo motivo do workflow de homologação: o `|| echo` engolia falha de
       # disparo e imprimia sucesso. Em produção isso é pior — ninguém percebe
       # que o site ficou na versão anterior.
+
+      # Hash servido ANTES de disparar: sem ele não dá para distinguir "deploy
+      # não chegou" de "deploy chegou e o hash é outro".
+      - name: Anotar o bundle que está no ar agora
+        id: antes
+        run: |
+          atual=$(curl -s --max-time 25 "https://marketdash.com.br/" | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' | head -1)
+          echo "no ar antes do deploy: ${atual:-(não lido)}"
+          echo "nome=$atual" >> "$GITHUB_OUTPUT"
       - name: Trigger Coolify deployment
         env:
           COOLIFY_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
@@ -67,6 +97,16 @@ jobs:
           chmod +x .github/scripts/trigger-deploy.sh
           .github/scripts/trigger-deploy.sh frontend "${{ secrets.COOLIFY_DEPLOY_URL_FRONTEND_PROD }}"
 
+
+      # "Webhook aceito" nunca foi "código no ar". Três vezes registradas o
+      # ambiente seguiu servindo o bundle antigo em silêncio.
+      - name: Confirmar que o bundle novo está no ar
+        run: |
+          chmod +x .github/scripts/confirmar-bundle.sh
+          .github/scripts/confirmar-bundle.sh \
+            "https://marketdash.com.br" \
+            "${{ steps.antes.outputs.nome }}" \
+            "${{ needs.validate.outputs.bundle }}"
       - name: Deployment status
         run: |
           echo "✅ Deployment triggered for production (main branch)"
