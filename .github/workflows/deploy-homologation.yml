@@ -91,6 +91,19 @@ jobs:
           atual=$(curl -s --max-time 25 "https://hml.marketdash.com.br/" | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' | head -1)
           echo "no ar antes do deploy: ${atual:-(não lido)}"
           echo "nome=$atual" >> "$GITHUB_OUTPUT"
+
+      # O grupo de `concurrency` do GitHub é POR REPOSITÓRIO: ele impede que os
+      # dois deploys DESTE repo construam juntos, mas não enxerga o repo do
+      # backend. Como os dois constroem no mesmo VPS de 4 vCPU, sem esta espera
+      # um deploy de frontend ainda pode cair em cima de um de backend — que é
+      # o tipo de sobreposição que derrubou produção em 11/09. A fila do
+      # Coolify é do servidor inteiro, então esperar por ela cobre os dois repos.
+      - name: Esperar o VPS parar de construir antes de disparar
+        env:
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+        run: |
+          chmod +x .github/scripts/aguardar-build.sh
+          .github/scripts/aguardar-build.sh "${{ secrets.COOLIFY_DEPLOY_URL_FRONTEND_HML }}"
       - name: Trigger Coolify deployment
         env:
           COOLIFY_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
