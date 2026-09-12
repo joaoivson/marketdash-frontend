@@ -39,6 +39,7 @@ import ImpostosMeta from "@/features/dashboard/pages/ImpostosMeta";
 import Campanhas from "@/features/dashboard/pages/Campanhas";
 import Automacoes from "@/features/dashboard/pages/Automacoes";
 import AutomacaoEditor from "@/features/dashboard/pages/AutomacaoEditor";
+import AutomacoesEmLote from "@/features/dashboard/pages/AutomacoesEmLote";
 import AutomacoesCallback from "@/features/dashboard/pages/AutomacoesCallback";
 import Configuracoes from "@/features/dashboard/pages/Configuracoes";
 import IndiquePage from "@/features/dashboard/pages/IndiquePage";
@@ -208,6 +209,12 @@ export const AppRoutes = () => {
         <Route
           path="/dashboard/automacoes/nova"
           element={<ProtectedRoute element={<RequirePlan menuKey="automacoes" element={<AutomacaoEditor />} />} />}
+        />
+        {/* ANTES da rota `:id` — "em-lote" seria capturado como id e a tela
+            abriria o editor pedindo uma automação que não existe. */}
+        <Route
+          path="/dashboard/automacoes/em-lote"
+          element={<ProtectedRoute element={<RequirePlan menuKey="automacoes" element={<AutomacoesEmLote />} />} />}
         />
         <Route
           path="/dashboard/automacoes/:id"
