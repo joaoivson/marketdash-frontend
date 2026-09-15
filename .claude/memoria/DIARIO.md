@@ -11,6 +11,28 @@
 
 ---
 
+## 2026-09-15b — O painel estreou mostrando um problema real
+
+**O que mudou.** Bloco da Hostinger na tela: CPU, memória, disco e uptime do
+VPS (agora, pico e média de 12 h), as últimas ações da Hostinger em chips, e um
+alerta vermelho quando existe `ct_set_limits` nas últimas 24 h.
+
+**Por quê o alerta é vermelho e não mais um campo.** A limitação de CPU da
+Hostinger **não se desfaz sozinha**: alguém precisa remover no painel deles. Um
+número a mais numa grade de oito campos não faz ninguém agir; uma faixa
+vermelha com a explicação, faz.
+
+**Formatação é parte do dado.** A API devolve `4855083008` e `283459` —
+mostrar o número cru seria tecnicamente correto e inútil. Vira `4.5 GB` e
+`3d 6h`, e CPU ≥ 80% fica em vermelho com o pico ao lado, porque é o pico que
+conta a história (de ~9% para 100% em uma hora).
+
+**A estreia valeu.** Na primeira carga com dado real o painel mostrou CPU a
+93%, pico 100% e duas limitações aplicadas pela Hostinger hoje — exatamente o
+tipo de coisa que antes só aparecia quando uma aluna reclamava do login.
+
+---
+
 ## 2026-09-15 — Admin › Infraestrutura, e o `min-w-0` que faltava no cartão
 
 **O que mudou.** Aba nova no `AdminLayout` e página

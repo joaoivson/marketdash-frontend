@@ -17,6 +17,7 @@ import {
   type Ambiente,
   type Ponta,
   type Recurso,
+  type SerieMetrica,
   type StatusInfra,
 } from "@/services/admin-infra.service";
 
@@ -70,6 +71,48 @@ function Campo({ label, valor }: { label: string; valor: React.ReactNode }) {
     <div className="min-w-0">
       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="truncate text-sm">{valor ?? "—"}</p>
+    </div>
+  );
+}
+
+/** Bytes → GB com uma casa; o painel nunca mostra o número cru da API. */
+const gb = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+
+const duracao = (segundos: number) => {
+  const dias = Math.floor(segundos / 86400);
+  const horas = Math.floor((segundos % 86400) / 3600);
+  return dias > 0 ? `${dias}d ${horas}h` : `${horas}h`;
+};
+
+/**
+ * Uma métrica do VPS com o valor de agora e o pico da janela.
+ *
+ * O pico está ali porque é ele que conta a história: em 15/09 a CPU saiu de
+ * ~9% para 85%+ em uma hora, e só o "agora" não distinguiria isso de uma
+ * máquina que sempre viveu assim.
+ */
+function Metrica({
+  label,
+  serie,
+  formata,
+  alerta,
+}: {
+  label: string;
+  serie?: SerieMetrica;
+  formata: (v: number) => string;
+  alerta?: (v: number) => boolean;
+}) {
+  if (!serie) return null;
+  const critico = alerta?.(serie.atual) ?? false;
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={`text-sm tabular-nums ${critico ? "font-semibold text-destructive" : ""}`}>
+        {formata(serie.atual)}
+      </p>
+      <p className="text-[11px] tabular-nums text-muted-foreground">
+        pico {formata(serie.pico)} · média {formata(serie.media)}
+      </p>
     </div>
   );
 }
@@ -379,31 +422,79 @@ export default function AdminInfra() {
                 {hostinger && !hostinger.configurado && hostinger.instrucao && (
                   <Aviso texto={hostinger.instrucao} />
                 )}
+
+                {/* O alarme que não existia em 11/09: a limitação da Hostinger
+                    não se desfaz sozinha, então ela precisa gritar na tela. */}
+                {hostinger?.limitacao_de_cpu && (
+                  <div className="mb-3 rounded-md border border-destructive/50 bg-destructive/10 p-3">
+                    <p className="flex items-center gap-2 text-sm font-semibold text-destructive">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      Limitação de CPU aplicada pela Hostinger —{" "}
+                      {hostinger.limitacao_de_cpu.ocorrencias_24h}× nas últimas 24 h, a última em{" "}
+                      {hora(hostinger.limitacao_de_cpu.ultima_em)}
+                    </p>
+                    <p className="mt-1 text-xs text-destructive/90">
+                      {hostinger.limitacao_de_cpu.explicacao}
+                    </p>
+                  </div>
+                )}
+
                 {hostinger?.vps && (
                   <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                    <Campo label="Hostname" valor={hostinger.vps.hostname} />
-                    <Campo label="Estado" valor={hostinger.vps.estado} />
-                    <Campo label="vCPU" valor={hostinger.vps.vcpus} />
-                    <Campo label="Plano" valor={hostinger.vps.plano} />
-                    {hostinger.metricas?.cpu_usage && (
-                      <Campo
-                        label="CPU (agora / pico 1h)"
-                        valor={`${hostinger.metricas.cpu_usage.atual} / ${hostinger.metricas.cpu_usage.pico}${
-                          hostinger.metricas.cpu_usage.unidade === "percent" ? "%" : ""
-                        }`}
-                      />
-                    )}
-                    {hostinger.metricas?.ram_usage && (
-                      <Campo
-                        label="RAM (agora / pico 1h)"
-                        valor={`${hostinger.metricas.ram_usage.atual} / ${hostinger.metricas.ram_usage.pico}`}
-                      />
-                    )}
-                    {hostinger.metricas?.disk_space && (
-                      <Campo label="Disco" valor={hostinger.metricas.disk_space.atual} />
-                    )}
+                    <Campo label="VPS" valor={`${hostinger.vps.plano} · ${hostinger.vps.estado}`} />
+                    <Campo
+                      label="Máquina"
+                      valor={`${hostinger.vps.vcpus} vCPU · ${Math.round(
+                        (hostinger.vps.memoria_mb ?? 0) / 1024,
+                      )} GB`}
+                    />
+                    <Metrica
+                      label={`CPU (janela ${hostinger.metricas?.janela_horas ?? 12} h)`}
+                      serie={hostinger.metricas?.cpu_usage}
+                      formata={(v) => `${v.toFixed(0)}%`}
+                      alerta={(v) => v >= 80}
+                    />
+                    <Metrica
+                      label="Memória"
+                      serie={hostinger.metricas?.ram_usage}
+                      formata={gb}
+                      alerta={(v) => v / 1024 ** 3 >= (hostinger.vps?.memoria_mb ?? 0) / 1024 * 0.9}
+                    />
+                    <Metrica
+                      label="Disco"
+                      serie={hostinger.metricas?.disk_space}
+                      formata={gb}
+                      alerta={(v) => v / 1024 ** 3 >= (hostinger.vps?.disco_mb ?? 0) / 1024 * 0.8}
+                    />
+                    <Metrica
+                      label="Uptime"
+                      serie={hostinger.metricas?.uptime}
+                      formata={duracao}
+                    />
                     {hostinger.metricas?.formato_inesperado && (
                       <Campo label="Métricas" valor="formato não reconhecido" />
+                    )}
+                    {hostinger.acoes.length > 0 && (
+                      <div className="col-span-2 min-w-0 md:col-span-4">
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                          Últimas ações da Hostinger na VPS
+                        </p>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {hostinger.acoes.slice(0, 6).map((a, i) => (
+                            <Badge
+                              key={`${a.nome}-${i}`}
+                              variant="outline"
+                              className={`text-[10px] font-normal ${
+                                a.nome === "ct_set_limits"
+                                  ? "border-destructive/50 text-destructive"
+                                  : ""
+                              }`}
+                            >
+                              {a.nome} · {hora(a.em)}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}

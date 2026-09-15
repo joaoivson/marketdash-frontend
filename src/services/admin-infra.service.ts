@@ -78,8 +78,24 @@ export type BlocoCoolify = {
 export type SerieMetrica = {
   atual: number;
   pico: number;
+  media: number;
+  /** `%` para CPU, `bytes` para RAM/disco, `seconds` para uptime. */
   unidade: string | null;
   pontos: number;
+  medido_em: string;
+};
+
+export type AcaoVps = { nome: string | null; estado: string | null; em: string | null };
+
+/**
+ * `ct_set_limits` nas últimas 24h — a "CPU limitation" da Hostinger.
+ * Auto-sustentável: com o teto reduzido a carga normal satura a fração
+ * liberada e a máquina não volta sozinha. Prolongou o apagão de 11/09 por ~20h.
+ */
+export type LimitacaoCpu = {
+  ocorrencias_24h: number;
+  ultima_em: string;
+  explicacao: string;
 };
 
 export type BlocoHostinger = {
@@ -92,6 +108,7 @@ export type BlocoHostinger = {
     estado?: string | null;
     plano?: string | null;
     vcpus?: number | null;
+    ip?: string | null;
     memoria_mb?: number | null;
     disco_mb?: number | null;
     criada_em?: string | null;
@@ -102,6 +119,8 @@ export type BlocoHostinger = {
         formato_inesperado?: boolean;
       } & Partial<Record<"cpu_usage" | "ram_usage" | "disk_space" | "uptime", SerieMetrica>>)
     | null;
+  acoes: AcaoVps[];
+  limitacao_de_cpu: LimitacaoCpu | null;
 };
 
 export type Ponta = {
