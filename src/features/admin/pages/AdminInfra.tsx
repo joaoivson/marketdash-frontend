@@ -121,7 +121,11 @@ function Aviso({ texto }: { texto: string }) {
   return (
     <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-      <p className="min-w-0">{texto}</p>
+      {/* `break-words`: mensagem de erro de API vem com URL crua, que é uma
+          palavra sem ponto de quebra. Sem isto a página rolava na horizontal
+          no celular (414px num viewport de 390) — e só acontece no caminho de
+          ERRO, que é justamente quando alguém abre o painel. */}
+      <p className="min-w-0 break-words">{texto}</p>
     </div>
   );
 }
@@ -314,7 +318,7 @@ export default function AdminInfra() {
       </div>
 
       {erro && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm break-words text-destructive">
           {erro}
         </div>
       )}
