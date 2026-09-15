@@ -7,6 +7,7 @@ const TABS = [
   { to: "/admin", label: "Dashboard", exact: true },
   { to: "/admin/clientes", label: "Clientes" },
   { to: "/admin/sincronizacoes", label: "Uso e Sistema" },
+  { to: "/admin/infraestrutura", label: "Infraestrutura" },
   { to: "/admin/despesas", label: "Despesas" },
   { to: "/admin/dre", label: "DRE" },
 ] as const;
