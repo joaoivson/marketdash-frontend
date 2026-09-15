@@ -57,6 +57,7 @@ import AdminClientDetailPage from "@/features/admin/pages/AdminClientDetail";
 import AdminExpensesPage from "@/features/admin/pages/AdminExpenses";
 import AdminDrePage from "@/features/admin/pages/AdminDre";
 import AdminSyncStatusPage from "@/features/admin/pages/AdminSyncStatus";
+import AdminInfraPage from "@/features/admin/pages/AdminInfra";
 import { AdminLayout } from "@/features/admin/components/AdminLayout";
 import PlanosPage from "@/features/dashboard/pages/PlanosPage";
 import { RequirePlan } from "@/app/routes/RequirePlan";
@@ -284,6 +285,7 @@ export const AppRoutes = () => {
           <Route path="clientes/:userId" element={<AdminClientDetailPage />} />
           <Route path="uso" element={<Navigate to="/admin/sincronizacoes?tab=uso" replace />} />
           <Route path="sincronizacoes" element={<AdminSyncStatusPage />} />
+          <Route path="infraestrutura" element={<AdminInfraPage />} />
           <Route path="despesas" element={<AdminExpensesPage />} />
           <Route path="dre" element={<AdminDrePage />} />
         </Route>

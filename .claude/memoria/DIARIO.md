@@ -11,6 +11,44 @@
 
 ---
 
+## 2026-09-15 — Admin › Infraestrutura, e o `min-w-0` que faltava no cartão
+
+**O que mudou.** Aba nova no `AdminLayout` e página
+`features/admin/pages/AdminInfra.tsx` consumindo `GET /admin/infra`. Cinco
+blocos; tabela no desktop, cartões no celular. Recarrega sozinha a cada 60 s,
+com guarda contra duas chamadas em voo (a resposta faz ~6 chamadas externas).
+
+**Por quê a ordem dos blocos é essa.** "Pontas públicas" vem **antes** do
+Coolify, contra a intuição. Em 11/09 o Coolify mostrou `running:healthy` com a
+API inalcançável há horas; quem olhasse o verde dele primeiro concluiria que
+estava tudo bem. O primeiro bloco da tela tem de ser o `GET` na URL que a
+aluna acessa.
+
+**O defeito que só a tela mostrou.** O cartão de container esticava a página
+para **456 px** num viewport de 390 — rolagem horizontal na página inteira,
+que é justamente o que `mobile-first.md` proíbe. A causa não é o `truncate`
+faltando (ele estava lá): **item de grid tem `min-width: auto`**, e o nome cru
+do Coolify (`cerely-qs8480sgosccoc8go8wsg84s`) é uma palavra sem ponto de
+quebra, então o cartão crescia e o `truncate` de dentro não tinha largura de
+referência. `min-w-0` no **cartão** (não só nos filhos) resolveu: 390 px.
+
+**Verde e vermelho calibrados.** `running:unknown` é o estado normal de todo
+worker Celery (container de pé, sem healthcheck) e sai como verde-claro "No ar
+(sem healthcheck)". Pintar de amarelo deixaria 5 das 10 linhas amarelas todo
+dia — e painel sempre amarelo é painel que ninguém lê.
+
+**Validação.** Playwright nos dois tamanhos, conferindo linha a linha: as 10
+linhas da tabela contra os 10 recursos da API (rótulo, status e teto de CPU),
+as 4 pontas com latência, e a fila do Celery contra o `LLEN` do Redis. A
+divergência (que hoje não está acontecendo) foi exercitada adulterando a
+resposta real no caminho, para ver o aviso âmbar e o selo de contagem no DOM.
+
+**Pendente.** Nada do lado do frontend. O bloco da Hostinger só preenche
+quando o backend tiver `HOSTINGER_API_TOKEN`; até lá a tela mostra a
+instrução.
+
+---
+
 ## 2026-09-08 — O tradutor do navegador matava o React; Meus Links vira lista
 
 **O que mudou.** `index.html` passa a declarar `lang="pt-BR"` + `translate="no"`
