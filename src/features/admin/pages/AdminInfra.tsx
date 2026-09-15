@@ -442,9 +442,9 @@ export default function AdminInfra() {
                   <div className="mb-3 rounded-md border border-destructive/50 bg-destructive/10 p-3">
                     <p className="flex items-center gap-2 text-sm font-semibold text-destructive">
                       <AlertTriangle className="h-4 w-4 shrink-0" />
-                      Limitação de CPU aplicada pela Hostinger —{" "}
+                      Hostinger mexeu nos limites da VPS —{" "}
                       {hostinger.limitacao_de_cpu.ocorrencias_24h}× nas últimas 24 h, a última em{" "}
-                      {hora(hostinger.limitacao_de_cpu.ultima_em)}
+                      {hora(hostinger.limitacao_de_cpu.ultima_em)}. Confira o painel deles.
                     </p>
                     <p className="mt-1 text-xs text-destructive/90">
                       {hostinger.limitacao_de_cpu.explicacao}
