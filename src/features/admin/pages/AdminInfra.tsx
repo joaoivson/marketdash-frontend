@@ -415,8 +415,17 @@ export default function AdminInfra() {
                   Coolify não tem endpoint de métricas (404), e o Sentinel
                   alimenta apenas a UI dele. */}
               <div className="border-t border-border pt-3">
+                {/* A Hostinger amostra a cada ~30 min: sem dizer a hora da
+                    medição, um número de meia hora atrás é lido como "agora"
+                    — e a decisão de "posso fazer deploy?" sai errada. */}
                 <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
                   Hostinger
+                  {hostinger?.metricas?.cpu_usage && (
+                    <span className="ml-2 normal-case tracking-normal">
+                      medido às {hora(hostinger.metricas.cpu_usage.medido_em)} · a Hostinger
+                      amostra a cada ~30 min
+                    </span>
+                  )}
                 </p>
                 {hostinger?.erro && <Aviso texto={`API da Hostinger: ${hostinger.erro}`} />}
                 {hostinger && !hostinger.configurado && hostinger.instrucao && (
