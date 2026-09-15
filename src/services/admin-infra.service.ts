@@ -167,6 +167,8 @@ export type Maquina = {
 export type StatusInfra = {
   gerado_em: string;
   somente_leitura: boolean;
+  /** `true` quando veio do cache de 30s do backend. */
+  do_cache: boolean;
   /** `null` fora do Linux (dev em macOS). */
   maquina: Maquina | null;
   coolify: BlocoCoolify;
@@ -175,8 +177,15 @@ export type StatusInfra = {
   filas: BlocoFilas;
 };
 
-export async function buscarStatusInfra(): Promise<StatusInfra> {
-  const resp = await fetchWithAuth(getApiUrl("/api/v1/admin/infra"));
+/**
+ * `forcar` fura o cache de 30s do backend. Só o botão "Atualizar" manda true:
+ * é gesto humano deliberado. A carga normal da tela aceita dado de meio
+ * minuto — cada coleta consulta a API do Coolify 6 vezes.
+ */
+export async function buscarStatusInfra(forcar = false): Promise<StatusInfra> {
+  const resp = await fetchWithAuth(
+    getApiUrl(`/api/v1/admin/infra${forcar ? "?forcar=true" : ""}`),
+  );
   if (!resp.ok) throw await erroDaResposta(resp, "Não foi possível ler o status da infra.");
   return resp.json();
 }

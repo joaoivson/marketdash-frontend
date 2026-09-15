@@ -35,7 +35,18 @@ import {
  * Coolify, com a autenticação do Coolify.
  */
 
-const RECARGA_MS = 60_000;
+/**
+ * NÃO existe recarga automática, e isso é decisão medida.
+ *
+ * Cada carga do painel são 6 chamadas à API do Coolify, e o Coolify é um app
+ * Laravel: em 15/09, com o VPS limitado a 20% de CPU pela Hostinger, o
+ * container `coolify` (0,68 vCPU) e o `coolify-db` (0,47) juntos passavam do
+ * teto inteiro da máquina. Um painel de diagnóstico que piora o que está
+ * diagnosticando é uma armadilha — ainda mais este, que fica aberto numa aba
+ * justamente durante o incidente.
+ *
+ * Carrega ao abrir e no botão "Atualizar". Quem está investigando aperta.
+ */
 
 const AMBIENTE_LABEL: Record<Ambiente, string> = {
   producao: "Produção",
@@ -267,14 +278,14 @@ export default function AdminInfra() {
   const [erro, setErro] = useState<string | null>(null);
   const emVoo = useRef(false);
 
-  const carregar = useCallback(async () => {
+  const carregar = useCallback(async (forcar = false) => {
     // A resposta faz ~6 chamadas externas; duas em voo ao mesmo tempo só
     // dobram a carga no Coolify sem adiantar nada na tela.
     if (emVoo.current) return;
     emVoo.current = true;
     setCarregando(true);
     try {
-      setDados(await buscarStatusInfra());
+      setDados(await buscarStatusInfra(forcar));
       setErro(null);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível ler o status da infra.");
@@ -286,8 +297,6 @@ export default function AdminInfra() {
 
   useEffect(() => {
     void carregar();
-    const t = setInterval(() => void carregar(), RECARGA_MS);
-    return () => clearInterval(t);
   }, [carregar]);
 
   const coolify = dados?.coolify;
@@ -304,11 +313,12 @@ export default function AdminInfra() {
         <div className="min-w-0">
           <h1 className="text-lg font-semibold">Infraestrutura</h1>
           <p className="text-xs text-muted-foreground">
-            Somente leitura — restart e deploy seguem no Coolify.
-            {dados && ` Lido às ${hora(dados.gerado_em)}.`}
+            Somente leitura — restart e deploy seguem no Coolify. Não recarrega sozinho: cada
+            leitura consulta o Coolify 6 vezes.
+            {dados && ` Lido às ${hora(dados.gerado_em)}${dados.do_cache ? " (cache)" : ""}.`}
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void carregar()} disabled={carregando}>
+        <Button variant="outline" size="sm" onClick={() => void carregar(true)} disabled={carregando}>
           {carregando ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (
