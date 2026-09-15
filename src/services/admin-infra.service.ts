@@ -146,9 +146,29 @@ export type BlocoFilas = {
   filas: { nome: string; tamanho: number }[];
 };
 
+/**
+ * A CPU do host lida de DENTRO do container (`/proc/stat`, que o Docker não
+ * isola). `steal_pct` é o campo que importa: em 15/09 a Hostinger mostrava
+ * "CPU 100%" e a leitura óbvia estava errada — 85% era steal, com a aplicação
+ * usando 6%. Máquina faminta, não ocupada.
+ */
+export type Maquina = {
+  usado_pct: number;
+  steal_pct: number;
+  iowait_pct: number;
+  ocioso_pct: number;
+  carga: number[];
+  vcpus: number;
+  carga_por_vcpu: number | null;
+  estrangulada: boolean;
+  explicacao_steal: string | null;
+};
+
 export type StatusInfra = {
   gerado_em: string;
   somente_leitura: boolean;
+  /** `null` fora do Linux (dev em macOS). */
+  maquina: Maquina | null;
   coolify: BlocoCoolify;
   hostinger: BlocoHostinger;
   pontas: Ponta[];

@@ -293,6 +293,7 @@ export default function AdminInfra() {
   const coolify = dados?.coolify;
   const servidor = coolify?.servidor;
   const hostinger = dados?.hostinger;
+  const maquina = dados?.maquina;
   const filas = dados?.filas;
   const pontasRuins = (dados?.pontas ?? []).filter((p) => !p.ok);
   const divergentes = (coolify?.recursos ?? []).filter((r) => r.contradicao);
@@ -412,6 +413,56 @@ export default function AdminInfra() {
                       )
                     }
                   />
+                </div>
+              )}
+
+              {/* Medição própria, sem intermediário e sem atraso: a API da
+                  Hostinger amostra a cada ~30 min e não conta steal. */}
+              {maquina && (
+                <div className="border-t border-border pt-3">
+                  {maquina.estrangulada && (
+                    <div className="mb-3 rounded-md border border-destructive/50 bg-destructive/10 p-3">
+                      <p className="flex items-center gap-2 text-sm font-semibold text-destructive">
+                        <AlertTriangle className="h-4 w-4 shrink-0" />
+                        A VPS está estrangulada pelo provedor — {maquina.steal_pct}% de steal
+                      </p>
+                      <p className="mt-1 text-xs break-words text-destructive/90">
+                        {maquina.explicacao_steal}
+                      </p>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                    <Campo
+                      label="Uso real (agora)"
+                      valor={
+                        <span className={maquina.usado_pct >= 85 ? "font-semibold text-destructive" : ""}>
+                          {maquina.usado_pct}% de {maquina.vcpus} vCPU
+                        </span>
+                      }
+                    />
+                    <Campo
+                      label="Steal (provedor)"
+                      valor={
+                        <span className={maquina.estrangulada ? "font-semibold text-destructive" : ""}>
+                          {maquina.steal_pct}%
+                        </span>
+                      }
+                    />
+                    <Campo label="I/O em espera" valor={`${maquina.iowait_pct}%`} />
+                    {/* Carga alta COM CPU ociosa é fila, não trabalho. */}
+                    <Campo
+                      label="Carga (1/5/15 min)"
+                      valor={
+                        <span
+                          className={
+                            (maquina.carga_por_vcpu ?? 0) >= 2 ? "font-semibold text-destructive" : ""
+                          }
+                        >
+                          {maquina.carga.map((c) => c.toFixed(1)).join(" · ")}
+                        </span>
+                      }
+                    />
+                  </div>
                 </div>
               )}
 
