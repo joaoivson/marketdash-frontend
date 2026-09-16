@@ -1,5 +1,20 @@
 name: Deploy to Homologation
 
+# O build da imagem acontece AQUI, no runner. O VPS só puxa.
+#
+# Gêmeo do deploy-production.yml, com duas diferenças: branch `develop` e SEM
+# gate de aprovação — homologação é para testar, e travar aqui só ensinaria a
+# ignorar o gate de produção. Ver o cabeçalho do outro arquivo para o porquê
+# de o build ter saído do VPS.
+#
+# ## As VITE_* agora vêm de GitHub Variables
+#
+# Antes, quem fornecia as variáveis de build era o painel do Coolify — o CI
+# construía com OUTROS valores só para testar e jogava fora. Por isso o hash do
+# bundle do CI nunca batia com o do ar, e `confirmar-bundle.sh` tinha um
+# caminho de "⚠️ trocou, mas com outro hash". Agora é o mesmo artefato: o hash
+# tem que bater exatamente.
+
 on:
   push:
     branches:
@@ -9,121 +24,174 @@ on:
       - '.github/**'
       - '.gitignore'
       - 'README.md'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag já publicada no GHCR (rollback ou redeploy), ex: hml-<sha>. Vazio = constrói este commit.'
+        required: false
+        default: ''
 
-# Homologação e produção compartilham o VPS de 4 vCPU com o backend, e o
-# Coolify constrói as imagens ali mesmo. Em 11/09/2026 dois builds simultâneos
-# levaram a CPU a 100% e a API de produção ficou ~20h fora. Grupo IGUAL nos
-# dois workflows para que um espere o outro.
 concurrency:
-  group: coolify-build-vps-frontend
+  group: deploy-frontend-hml
   cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGEM: ghcr.io/joaoivson/marketdash-frontend
 
 jobs:
   validate:
     name: Validate Code
-    outputs:
-      bundle: ${{ steps.bundle.outputs.nome }}
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'   # igual ao da imagem; antes o CI usava 18 e a
+                               # imagem 20, então os dois builds não eram o mesmo
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run linter
-        run: npm run lint || echo "⚠️ Linter found issues (warnings allowed)"
+      - name: Lint
+        run: npm run lint || echo "⚠️ lint com avisos"
         continue-on-error: true
 
-      - name: Validate TypeScript
-        run: npx tsc --noEmit
-
-      - name: Test build
-        run: npm run build
-        env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL || 'https://api.hml.marketdash.com.br' }}
-
-
-      # O nome do arquivo do Vite é hash do conteúdo: é a identidade do build
-      # deste commit, e serve de gabarito para conferir depois do deploy se o
-      # que está no ar é ESTE código ou o anterior.
-      - name: Registrar o bundle deste build
-        id: bundle
+      # `npx tsc --noEmit` na raiz NÃO valida nada: o tsconfig.json tem
+      # `"files": []` e o comando sai 0 mesmo com erro de tipo em src/. Só o
+      # -p tsconfig.app.json olha o código. Há ~25 erros pré-existentes, então
+      # o critério é "não aumentou", não "zero".
+      - name: Type check (src/ de verdade)
         run: |
-          nome=$(ls dist/assets/index-*.js 2>/dev/null | head -1 | sed 's|^dist||')
-          echo "bundle deste commit: ${nome:-(não encontrado)}"
-          echo "nome=$nome" >> "$GITHUB_OUTPUT"
-      - name: Check build artifacts
-        run: |
-          if [ ! -d "dist" ]; then
-            echo "❌ Build failed: dist directory not found"
+          erros=$(npx tsc -p tsconfig.app.json --noEmit 2>&1 | grep -c "error TS" || true)
+          echo "erros de tipo: $erros (baseline: 26)"
+          if [ "$erros" -gt 26 ]; then
+            echo "::error::número de erros de tipo aumentou ($erros > 26)"
             exit 1
           fi
-          echo "✅ Build successful"
 
-  deploy:
-    name: Deploy to Coolify
+      # O `npm run build` que existia aqui saiu: o build de verdade é o do
+      # Docker, com as variáveis certas. Construir duas vezes com envs
+      # diferentes era o que produzia dois bundles distintos.
+
+  build:
+    name: Build e publicar imagem
     runs-on: ubuntu-latest
     needs: validate
-    if: github.ref == 'refs/heads/develop'
-    
+    if: ${{ inputs.tag == '' }}
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      bundle: ${{ steps.bundle.outputs.nome }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # O passo antigo era um curl com `|| echo "Deployment triggered"`, que
-      # engolia qualquer falha (URL vazia, 404, timeout) e ainda imprimia
-      # sucesso. É o mesmo defeito que deixou o worker Celery com código de
-      # semanas atrás e o CI verde. O script confere o HTTP e falha alto.
+      - name: Definir a tag
+        id: meta
+        run: echo "tag=hml-${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
-      # Hash servido ANTES de disparar: sem ele não dá para distinguir "deploy
-      # não chegou" de "deploy chegou e o hash é outro".
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login no GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ⚠️ Os valores vêm das Variables do repositório e são os MESMOS que
+      # estavam no painel do Coolify (Environment Variables › build). Se a
+      # chave do Supabase vier errada, o Dockerfile falha o build de propósito
+      # — `supabase.ts` lança no import e a tela ficaria branca.
+      - name: Build e push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          provenance: false
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            VITE_API_URL=${{ vars.VITE_API_URL_HML }}
+            VITE_SUPABASE_URL=${{ vars.VITE_SUPABASE_URL_HML }}
+            VITE_SUPABASE_ANON_KEY=${{ vars.VITE_SUPABASE_ANON_KEY_HML }}
+            VITE_WHATSAPP_NUMBER=${{ vars.VITE_WHATSAPP_NUMBER }}
+            VITE_FEEDBACK_EMAIL=${{ vars.VITE_FEEDBACK_EMAIL }}
+            VITE_FEEDBACK_MIN_NAVIGATIONS=${{ vars.VITE_FEEDBACK_MIN_NAVIGATIONS }}
+          tags: |
+            ${{ env.IMAGEM }}:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGEM }}:hml
+          cache-from: type=gha,scope=frontend-hml
+          cache-to: type=gha,mode=max,scope=frontend-hml
+
+      # O hash esperado sai da PRÓPRIA imagem publicada, não de um build
+      # paralelo. É isso que torna a confirmação exata.
+      - name: Ler o hash do bundle dentro da imagem
+        id: bundle
+        run: |
+          nome=$(docker run --rm --entrypoint sh "$IMAGEM:${{ steps.meta.outputs.tag }}" \
+                   -c 'ls /usr/share/nginx/html/assets/index-*.js' | head -1 | sed 's|/usr/share/nginx/html||')
+          echo "nome=$nome" >> "$GITHUB_OUTPUT"
+          echo "bundle desta imagem: $nome"
+
+  deploy:
+    name: Deploy em homologação
+    runs-on: ubuntu-latest
+    needs: [validate, build]
+    if: |
+      always()
+      && needs.validate.result == 'success'
+      && (needs.build.result == 'success' || needs.build.result == 'skipped')
+
+    env:
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+      TAG: ${{ inputs.tag || needs.build.outputs.tag }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Anotar o bundle que está no ar agora
         id: antes
         run: |
-          atual=$(curl -s --max-time 25 "https://hml.marketdash.com.br/" | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' | head -1)
-          echo "no ar antes do deploy: ${atual:-(não lido)}"
+          atual=$(curl -s --max-time 25 https://hml.marketdash.com.br/ \
+                  | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' | head -1)
           echo "nome=$atual" >> "$GITHUB_OUTPUT"
+          echo "no ar antes do deploy: ${atual:-(não consegui ler)}"
 
-      # O grupo de `concurrency` do GitHub é POR REPOSITÓRIO: ele impede que os
-      # dois deploys DESTE repo construam juntos, mas não enxerga o repo do
-      # backend. Como os dois constroem no mesmo VPS de 4 vCPU, sem esta espera
-      # um deploy de frontend ainda pode cair em cima de um de backend — que é
-      # o tipo de sobreposição que derrubou produção em 11/09. A fila do
-      # Coolify é do servidor inteiro, então esperar por ela cobre os dois repos.
-      - name: Esperar o VPS parar de construir antes de disparar
-        env:
-          COOLIFY_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+      - name: Deploy
         run: |
-          chmod +x .github/scripts/aguardar-build.sh
-          .github/scripts/aguardar-build.sh "${{ secrets.COOLIFY_DEPLOY_URL_FRONTEND_HML }}"
-      - name: Trigger Coolify deployment
-        env:
-          COOLIFY_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-        run: |
-          chmod +x .github/scripts/trigger-deploy.sh
-          .github/scripts/trigger-deploy.sh frontend "${{ secrets.COOLIFY_DEPLOY_URL_FRONTEND_HML }}"
+          chmod +x .github/scripts/deploy-imagem.sh
+          .github/scripts/deploy-imagem.sh frontend \
+            "${{ secrets.COOLIFY_DEPLOY_URL_FRONTEND_HML }}" \
+            "$IMAGEM" "$TAG"
 
-
-      # "Webhook aceito" nunca foi "código no ar". Três vezes registradas o
-      # ambiente seguiu servindo o bundle antigo em silêncio.
       - name: Confirmar que o bundle novo está no ar
         run: |
           chmod +x .github/scripts/confirmar-bundle.sh
           .github/scripts/confirmar-bundle.sh \
             "https://hml.marketdash.com.br" \
             "${{ steps.antes.outputs.nome }}" \
-            "${{ needs.validate.outputs.bundle }}"
-      - name: Deployment status
+            "${{ needs.build.outputs.bundle }}"
+
+      # Segunda prova, e mais específica: diz QUAL commit está servido.
+      - name: Confirmar a versão
         run: |
-          echo "✅ Deployment triggered for homologation (develop branch)"
-          echo "Repository: ${{ github.repository }}"
-          echo "Commit: ${{ github.sha }}"
-          echo "Branch: ${{ github.ref }}"
+          for i in $(seq 1 20); do
+            v=$(curl -s --max-time 20 https://hml.marketdash.com.br/version.json | jq -r '.version // empty')
+            [ "$v" = "${{ github.sha }}" ] && { echo "✅ version.json = $v"; exit 0; }
+            [ -n "${{ inputs.tag }}" ] && { echo "ℹ️ redeploy de tag: version.json = $v"; exit 0; }
+            echo "   [$((i*10))s] version.json: ${v:-(sem resposta)}"
+            sleep 10
+          done
+          echo "::error::version.json não passou a responder ${{ github.sha }}"
+          exit 1
