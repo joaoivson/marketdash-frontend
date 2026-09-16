@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
+import { MiniaturaInstagram } from "@/features/dashboard/components/MiniaturaInstagram";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -77,20 +78,11 @@ const AutomacaoCard = ({
   return (
     <Card>
       <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
-        {automacao.media_thumbnail_url ? (
-          <img
-            src={automacao.media_thumbnail_url}
-            alt=""
-            className="h-16 w-16 flex-shrink-0 rounded-lg object-cover"
-            onError={(e) => {
-              (e.currentTarget as HTMLImageElement).style.visibility = "hidden";
-            }}
-          />
-        ) : (
-          <span className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-lg bg-muted">
-            <Instagram className="h-6 w-6 text-muted-foreground" />
-          </span>
-        )}
+        <MiniaturaInstagram
+          url={automacao.media_thumbnail_url}
+          className="h-16 w-16 flex-shrink-0"
+          iconeClassName="h-6 w-6"
+        />
 
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
