@@ -72,9 +72,9 @@ jobs:
       - name: Type check (src/ de verdade)
         run: |
           erros=$(npx tsc -p tsconfig.app.json --noEmit 2>&1 | grep -c "error TS" || true)
-          echo "erros de tipo: $erros (baseline: 26)"
-          if [ "$erros" -gt 26 ]; then
-            echo "::error::número de erros de tipo aumentou ($erros > 26)"
+          echo "erros de tipo: $erros (baseline: 25 na develop)"
+          if [ "$erros" -gt 25 ]; then
+            echo "::error::número de erros de tipo aumentou ($erros > 25)"
             exit 1
           fi
 
