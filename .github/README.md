@@ -1,107 +1,88 @@
-# GitHub Actions Workflows - Frontend
+# CI/CD — o Actions constrói, o VPS só puxa
 
-Este diretório contém os workflows do GitHub Actions para deploy automático do frontend MarketDash.
+**Desde 16/09/2026.** Antes, o Coolify rodava `docker build` **dentro do VPS que
+serve produção**. Em 16/09, sob o teto de CPU da Hostinger, o `npm ci` deste
+projeto passou 20 minutos baixando e morreu com `ECONNRESET` — com ~25% de um
+núcleo, cada handshake TLS leva 1,4 s e a conexão cai. A tentativa deixou
+produção inutilizável das 07:40 às 08:20 BRT.
 
-## Workflows Disponíveis
+Agora nenhum `docker build` roda no VPS.
 
-### 1. Deploy to Production (`deploy-production.yml`)
+```
+push na develop ─► validate ─► build (runner) ─► GHCR ─► deploy: Coolify PUXA ─► prova
+push na main    ─► validate ─► build (runner) ─► GHCR ─► [APROVAÇÃO] ─► deploy ─► prova
+```
 
-**Trigger**: Push para a branch `main`
+## As `VITE_*` agora vêm de GitHub Variables
 
-**Processo**:
-1. **Validação**: 
-   - Executa linter (`npm run lint`)
-   - Valida TypeScript (`tsc --noEmit`)
-   - Testa build (`npm run build`)
-   - Verifica artefatos de build
-2. **Deploy**: 
-   - Aciona webhook do Coolify para deploy em produção
-   - Aplicação: `marketdash-frontend:main`
-   - Domínio: `marketdash.com.br`
+Esta é a diferença que mais muda o dia a dia. Antes quem fornecia as variáveis de
+build era o painel do Coolify: o CI construía com **outros** valores só para
+testar e jogava fora. Por isso o hash do bundle do CI nunca batia com o do ar, e
+`confirmar-bundle.sh` tinha um caminho de "⚠️ trocou, mas com outro hash".
 
-### 2. Deploy to Homologation (`deploy-homologation.yml`)
+Agora é o mesmo artefato, e **o hash tem de bater exatamente**.
 
-**Trigger**: Push para a branch `develop`
+| Variable | vale para |
+|---|---|
+| `VITE_API_URL_PROD` / `_HML` | fallback (o `API_BY_HOST` resolve em runtime) |
+| `VITE_SUPABASE_URL_PROD` / `_HML` | `iprdyorx…` / `ytjpdvj…` |
+| `VITE_SUPABASE_ANON_KEY_PROD` / `_HML` | chave `anon` — pública por natureza |
+| `VITE_WHATSAPP_NUMBER`, `VITE_FEEDBACK_EMAIL`, `VITE_FEEDBACK_MIN_NAVIGATIONS` | comuns |
 
-**Processo**:
-1. **Validação**: 
-   - Executa linter (`npm run lint`)
-   - Valida TypeScript (`tsc --noEmit`)
-   - Testa build (`npm run build`)
-   - Verifica artefatos de build
-2. **Deploy**: 
-   - Aciona webhook do Coolify para deploy em homologação
-   - Aplicação: `marketdash-frontend-hml`
-   - Domínio: `hml.marketdash.com.br`
+⚠️ **Uma imagem por ambiente.** O Vite grava as `VITE_*` **inline** no bundle:
+não há como trocá-las depois sem reconstruir. `prod-<sha>` e `hml-<sha>` são
+artefatos diferentes, e subir o de um ambiente no outro dá **401 em toda chamada
+autenticada** (está no troubleshooting do `CLAUDE.md`).
 
-## Configuração de Secrets
+⚠️ **Trocar chave de Supabase é trocar Variable, não mexer no Coolify.** O painel
+do Coolify não influencia mais o build.
 
-Configure os seguintes secrets no GitHub:
+## A guarda contra tela branca
 
-1. Acesse: `https://github.com/joaoivson/marketdash-frontend/settings/secrets/actions`
-2. Adicione:
-   - **Name**: `COOLIFY_API_TOKEN`
-     - **Value**: Token de API do Coolify (criar em Settings → Keys & Tokens)
-   - **Name**: `COOLIFY_DEPLOY_URL_FRONTEND_HML`
-     - **Value**: `http://31.97.22.173:8000/api/v1/deploy?uuid={UUID_FRONTEND_HML}&force=false`
-     - Substitua `{UUID_FRONTEND_HML}` pelo UUID da aplicação de homologação (encontre em Webhooks)
-   - **Name**: `COOLIFY_DEPLOY_URL_FRONTEND_PROD`
-     - **Value**: `http://31.97.22.173:8000/api/v1/deploy?uuid={UUID_FRONTEND_PROD}&force=false`
-     - Substitua `{UUID_FRONTEND_PROD}` pelo UUID da aplicação de produção (encontre em Webhooks)
-   - **Name**: `VITE_API_URL` (opcional, usado apenas para build de teste)
-     - **Value para produção**: `https://api.marketdash.com.br`
-     - **Value para homologação**: `https://api.hml.marketdash.com.br`
+`src/shared/lib/supabase.ts` lança **no import** quando a URL ou a chave faltam —
+o app não renderiza nada, a usuária vê tela branca, e o container sobe
+"saudável". Por isso o `Dockerfile` falha de propósito se as variáveis chegarem
+vazias, e ainda faz `grep` da URL dentro do bundle gerado. Falhar no build é
+barato; descobrir isso em produção não é.
 
-**Documentação completa**: Veja `GUIA_CONFIGURACAO_DEPLOY_WEBHOOK_AUTENTICADO.md` na raiz do projeto.
+## Workflows
 
-## Validações Implementadas
+| arquivo | dispara em | gate |
+|---|---|---|
+| `deploy-homologation.yml` | push na `develop`, ou dispatch | não |
+| `deploy-production.yml` | push na `main`, ou dispatch | **sim** — `environment: production`, revisor `joaoivson` |
+| `limpar-ghcr.yml` | cron semanal | — mantém as 15 últimas versões |
 
-- ✅ Linter (`npm run lint`)
-- ✅ Validação TypeScript (`tsc --noEmit`)
-- ✅ Teste de build (`npm run build`)
-- ✅ Verificação de artefatos de build (diretório `dist`)
+## Type check — o comando da raiz não valida nada
 
-## Próximas Melhorias
+`npx tsc --noEmit` na raiz **sai 0 mesmo com erro de tipo**: o `tsconfig.json`
+tem `"files": []`. Só `-p tsconfig.app.json` olha o `src/`.
 
-- [ ] Adicionar testes unitários com Vitest ou Jest
-- [ ] Adicionar testes E2E com Playwright
-- [ ] Adicionar verificação de dependências vulneráveis (`npm audit`)
-- [ ] Adicionar análise de bundle size
-- [ ] Adicionar notificações (Slack, Discord, Email)
+Há erros pré-existentes, então o critério é **"não aumentou"**, não "zero" — e a
+baseline **difere por branch**: `develop` 25, `main` 26. Um cherry-pick que
+esqueça isso reprova com "o número aumentou" num commit que não encostou em tipo
+nenhum.
 
-## Troubleshooting
+## Duas provas depois do deploy
 
-### Workflow não executa
+1. `confirmar-bundle.sh` — o hash do bundle no ar tem de virar **exatamente** o
+   da imagem publicada (lido de dentro dela, com `docker run … ls`)
+2. `/version.json` tem de responder o SHA. O `nginx.conf` serve esse caminho com
+   `no-store` — `.json` não está na lista que o Cloudflare cacheia por padrão,
+   mas depender disso seria frágil
 
-- Verifique se o push foi feito para a branch correta (`main` ou `develop`)
-- Verifique se os arquivos modificados não estão em `paths-ignore`
+## Rollback — segundos, sem build
 
-### Validação falha
+```bash
+gh workflow run deploy-production.yml -f tag=prod-<sha-anterior>
+```
 
-- **Linter falha**: Execute `npm run lint` localmente e corrija os erros
-- **TypeScript falha**: Execute `npx tsc --noEmit` localmente e corrija os erros
-- **Build falha**: Execute `npm run build` localmente e verifique os erros
+O input `tag` **pula** o job `build`: reaponta a imagem já publicada e redeploya.
 
-### Deploy não é acionado
+## Scripts
 
-- Verifique se os secrets `COOLIFY_API_TOKEN` e `COOLIFY_DEPLOY_URL_FRONTEND_{ENV}` estão configurados corretamente
-- Verifique se o UUID na URL do webhook corresponde ao UUID da aplicação no Coolify
-- Verifique se o token de API tem permissões de deploy
-- Verifique se o Coolify está acessível e funcionando
-- Verifique os logs do job `deploy` para identificar erros (status HTTP do curl)
-
-## Variáveis de Ambiente
-
-O build do frontend requer a variável `VITE_API_URL` para funcionar corretamente. No workflow, usamos valores padrão baseados no ambiente:
-
-- **Produção**: `https://api.marketdash.com.br`
-- **Homologação**: `https://api.hml.marketdash.com.br`
-
-Você pode configurar um secret `VITE_API_URL` no GitHub para sobrescrever esses valores.
-
-## Referências
-
-- [GitHub Actions Documentation](https://docs.github.com/en/actions)
-- [Coolify Documentation](https://coolify.io/docs)
-- [Vite Environment Variables](https://vitejs.dev/guide/env-and-mode.html)
-- [WEBHOOKS_SSL_CONFIG.md](../../WEBHOOKS_SSL_CONFIG.md)
+| script | o que faz |
+|---|---|
+| `deploy-imagem.sh` | trava `build_pack` → PATCH da tag → dispara → poll até `finished` → confere |
+| `confirmar-bundle.sh <url> <antes> <esperado>` | o bundle no ar mudou, e é o esperado |
+| ~~`aguardar-build.sh`~~, ~~`trigger-deploy.sh`~~ | mortos: serializavam builds no VPS. Nenhum workflow chama |
