@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Heart, Instagram, MessageCircle, Send } from "lucide-react";
+import { Heart, MessageCircle, Send } from "lucide-react";
 
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MiniaturaInstagram } from "@/features/dashboard/components/MiniaturaInstagram";
 import { cn } from "@/shared/lib/utils";
 
 /** Quebra o texto em pedaços, transformando URLs em link renderizado. */
@@ -61,13 +62,11 @@ export const AutomacaoPreview = ({
       <Celular>
         {aba === "comentario" ? (
           <div className="space-y-3">
-            {thumbnailUrl ? (
-              <img src={thumbnailUrl} alt="" className="h-36 w-full rounded-lg object-cover" />
-            ) : (
-              <div className="flex h-36 w-full items-center justify-center rounded-lg bg-zinc-900">
-                <Instagram className="h-7 w-7 text-zinc-700" />
-              </div>
-            )}
+            <MiniaturaInstagram
+              url={thumbnailUrl}
+              className="h-36 w-full bg-zinc-900"
+              iconeClassName="h-7 w-7 text-zinc-700"
+            />
             <div className="flex items-center gap-3 text-zinc-500">
               <Heart className="h-4 w-4" />
               <MessageCircle className="h-4 w-4" />
