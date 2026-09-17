@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, Info, Link2, Loader2, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Info, Link2, Loader2, Send, X } from "lucide-react";
 
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { EmojiPicker } from "@/components/shared/EmojiPicker";
 import { AutomacaoPreview } from "@/features/dashboard/components/AutomacaoPreview";
 import { InserirLinkModal } from "@/features/dashboard/components/InserirLinkModal";
+import { RetroativosModal } from "@/features/dashboard/components/RetroativosModal";
 import { SelecionarPublicacao } from "@/features/dashboard/components/SelecionarPublicacao";
 import { SelecionarStory } from "@/features/dashboard/components/SelecionarStory";
 import { useToast } from "@/hooks/use-toast";
@@ -23,6 +24,7 @@ import {
 import { cn } from "@/shared/lib/utils";
 import type {
   AutomacaoEscopo,
+  AutomacaoStatus,
   AutomacaoTrigger,
   InstagramAutomationPayload,
   InstagramMediaItem,
@@ -139,6 +141,15 @@ const AutomacaoEditor = () => {
   const [carregando, setCarregando] = useState(!!editando);
   const [salvando, setSalvando] = useState(false);
   const [modalLink, setModalLink] = useState(false);
+  // Status SALVO (o form não guarda): o retroativo usa a automação do banco,
+  // não o que está sendo editado e ainda não foi salvo.
+  const [salva, setSalva] = useState<{
+    id: number;
+    nome: string;
+    status: AutomacaoStatus;
+    escopo: AutomacaoEscopo;
+  } | null>(null);
+  const [modalRetroativos, setModalRetroativos] = useState(false);
 
   useEffect(() => {
     void carregarConexao();
@@ -147,7 +158,8 @@ const AutomacaoEditor = () => {
   useEffect(() => {
     if (!editando) return;
     getAutomation(Number(id))
-      .then((a) =>
+      .then((a) => {
+        setSalva({ id: a.id, nome: a.nome, status: a.status, escopo: a.escopo });
         setForm({
           nome: a.nome,
           escopo: a.escopo,
@@ -162,8 +174,8 @@ const AutomacaoEditor = () => {
           dm_link: a.dm_link || "",
           dm_botao_texto: a.dm_botao_texto || "",
           dm_texto: a.dm_texto,
-        }),
-      )
+        });
+      })
       .catch((e: Error) =>
         toast({ title: "Erro ao carregar", description: e.message, variant: "destructive" }),
       )
@@ -283,6 +295,13 @@ const AutomacaoEditor = () => {
     <DashboardLayout title="Automação Instagram">
       {/* Página inteira em duas colunas — não uma sidebar estreita com scroll infinito. */}
       <div className="mx-auto w-full max-w-[1100px] pb-40 md:pb-24">
+        {salva && salva.escopo === "post_especifico" && salva.status !== "rascunho" && (
+          <div className="mb-6 flex justify-end">
+            <Button variant="outline" onClick={() => setModalRetroativos(true)}>
+              <Send className="mr-2 h-4 w-4" /> Enviar para quem já comentou
+            </Button>
+          </div>
+        )}
         <div className="grid gap-6 lg:grid-cols-[62fr_38fr]">
           <div className="space-y-6">
             <div className="space-y-2">
@@ -695,6 +714,11 @@ const AutomacaoEditor = () => {
           </div>
         </div>
       </div>
+
+      <RetroativosModal
+        automacao={modalRetroativos ? salva : null}
+        onFechar={() => setModalRetroativos(false)}
+      />
 
       <InserirLinkModal
         aberto={modalLink}

@@ -168,5 +168,8 @@ export interface RetroativoPrevia {
 
 export interface RetroativoEnvio {
   enfileirados: number;
+  /** Entraram no contador sem envio: passaram de 7 dias ou a pessoa já tinha recebido. */
+  registrados_expirados: number;
+  registrados_duplicados: number;
   previa: RetroativoPrevia;
 }
