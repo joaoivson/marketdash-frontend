@@ -27,15 +27,24 @@ const GENERICAS = new Set(["quero", "eu quero", "link", "manda", "preco", "valor
  */
 export const AnunciosVinculados = ({
   automacaoId,
+  mediaPrincipal,
   palavras,
-  vinculados,
+  vinculados: todosVinculados,
   onSalvo,
 }: {
   automacaoId: number;
+  /** A mídia da própria automação: já coberta, nunca aparece como "vinculada". */
+  mediaPrincipal?: string | null;
   palavras: string[];
   vinculados: string[];
   onSalvo: (automacao: InstagramAutomation) => void;
 }) => {
+  // Memoizado: o modal reinicia a seleção quando esta lista muda de identidade,
+  // e um array novo a cada render apagaria o que a aluna acabou de marcar.
+  const vinculados = useMemo(
+    () => todosVinculados.filter((id) => id !== mediaPrincipal),
+    [todosVinculados, mediaPrincipal],
+  );
   const { toast } = useToast();
   const [anuncios, setAnuncios] = useState<InstagramMediaItem[] | null>(null);
   const [modal, setModal] = useState(false);
@@ -43,9 +52,10 @@ export const AnunciosVinculados = ({
 
   useEffect(() => {
     listInstagramAnuncios()
-      .then((p) => setAnuncios(p.items))
+      // Automação criada NO anúncio: ele é a mídia principal, não um vínculo.
+      .then((p) => setAnuncios(p.items.filter((a) => a.id !== mediaPrincipal)))
       .catch(() => setAnuncios([]));
-  }, []);
+  }, [mediaPrincipal]);
 
   // Sugere quando a palavra que a legenda pede, ou uma palavra específica da
   // automação ("boddy", "luminária"), aparece no anúncio.
