@@ -71,6 +71,20 @@ export const listInstagramMedia = async (
   return (await res.json()) as InstagramMediaPage;
 };
 
+/** Define a lista COMPLETA de anúncios da automação (o resto é desvinculado). */
+export const setAutomationAnuncios = async (
+  id: number,
+  mediaIds: string[],
+): Promise<InstagramAutomation> => {
+  const res = await fetchWithAuth(getApiUrl(`${BASE}/automations/${id}/anuncios`), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ media_ids: mediaIds }),
+  });
+  if (!res.ok) throw await erroDaResposta(res, "Erro ao vincular anúncios");
+  return (await res.json()) as InstagramAutomation;
+};
+
 /** Anúncios que já receberam comentário — não aparecem em /media. */
 export const listInstagramAnuncios = async (): Promise<InstagramMediaPage> => {
   const res = await fetchWithAuth(getApiUrl(`${BASE}/anuncios`));

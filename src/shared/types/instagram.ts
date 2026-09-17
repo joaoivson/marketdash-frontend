@@ -52,6 +52,8 @@ export interface InstagramMediaItem {
   ad_title?: string | null;
   comentarios?: number | null;
   ultimo_comentario_em?: string | null;
+  /** Automação que já responde este anúncio. */
+  automation_id_vinculada?: number | null;
 }
 
 export interface InstagramMediaPage {
@@ -95,6 +97,8 @@ export interface InstagramAutomation {
   updated_at: string | null;
   comentarios_capturados: number;
   directs_enviados: number;
+  /** Anúncios do mesmo produto que esta automação também responde. */
+  anuncios_vinculados: string[];
 }
 
 /** Corpo de criação/edição — o backend calcula o resto. */
