@@ -71,3 +71,38 @@ export const CHIPS_PERIODO: { modo: ModoPeriodo; texto: string }[] = [
   { modo: { tipo: "ano" }, texto: "Este ano" },
   { modo: { tipo: "total" }, texto: "Todo o período" },
 ];
+
+
+/** Caminho da lista de clientes do admin.
+ *
+ * É **`clientes`**, em português. O projeto mistura os dois idiomas: as rotas de
+ * TELA são em português (`/admin/clientes`, `/admin/despesas`) e as de API em
+ * inglês (`/api/v1/admin/clients`). Escrever `/admin/clients` dá 404 — foi
+ * exatamente o que aconteceu com o drill-down em 17/09/2026, em produção.
+ */
+export const ROTA_CLIENTES_ADMIN = "/admin/clientes";
+
+/** Link do drill-down de um card do dashboard para a lista de clientes.
+ *
+ * O período viaja junto: clicar num total de 12 meses e cair numa lista do mês
+ * corrente daria números que não fecham com o card.
+ */
+export const linkDoCardParaClientes = (
+  origem: "mrr" | "faturamento" | "churn",
+  periodo: PeriodoAdmin | undefined,
+  year: number,
+  month: number,
+): string => {
+  const qs = new URLSearchParams({ origem });
+  if (periodo?.inicio) qs.set("inicio", periodo.inicio);
+  if (periodo?.fim) qs.set("fim", periodo.fim);
+  if (!periodo) {
+    // Modo mensal: manda as bordas do mês escolhido, para a lista não depender
+    // de adivinhar year/month.
+    const ultimo = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const mm = String(month).padStart(2, "0");
+    qs.set("inicio", `${year}-${mm}-01`);
+    qs.set("fim", `${year}-${mm}-${ultimo}`);
+  }
+  return `${ROTA_CLIENTES_ADMIN}?${qs}`;
+};
