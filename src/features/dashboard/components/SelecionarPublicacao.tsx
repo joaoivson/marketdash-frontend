@@ -4,6 +4,8 @@ import { Instagram, Loader2, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ResponsiveModal } from "@/components/shared/ResponsiveModal";
+import { LinhaMidia } from "@/features/dashboard/components/LinhaMidia";
+import { palavraPedida, tituloDaMidia } from "@/shared/lib/instagram-midia";
 import { useToast } from "@/hooks/use-toast";
 import { listInstagramAnuncios, listInstagramMedia } from "@/services/instagram.service";
 import { cn } from "@/shared/lib/utils";
@@ -91,9 +93,16 @@ const Thumb = ({
  */
 export const SelecionarPublicacao = ({
   selecionado,
+  resumo,
   onSelecionar,
 }: {
   selecionado?: string | null;
+  /**
+   * Retrato da mídia já escolhida (vem salvo na automação). Com ele o componente
+   * vira UMA linha com "Trocar": a fileira de 4 posts recentes não mostrava a
+   * publicação escolhida quando ela estava além da primeira página.
+   */
+  resumo?: { thumbnail_url: string | null; caption_preview: string | null } | null;
   onSelecionar: (item: InstagramMediaItem) => void;
 }) => {
   const { toast } = useToast();
@@ -172,6 +181,108 @@ export const SelecionarPublicacao = ({
     return termo ? anuncios.filter((i) => casaBusca(i, termo)) : anuncios;
   }, [anuncios, busca]);
 
+  const modal = (
+    <ResponsiveModal
+      open={modalAberto}
+      onOpenChange={setModalAberto}
+      title="Escolher publicação"
+      contentClassName="sm:max-w-2xl"
+    >
+      <div className="space-y-3">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar pela legenda"
+            className="pl-9"
+            aria-label="Buscar publicação pela legenda"
+          />
+        </div>
+
+        <div className="max-h-[55vh] overflow-y-auto pr-1">
+          {anunciosFiltrados.length > 0 && (
+            <div className="mb-4 space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">
+                Anúncios que já receberam comentário
+              </p>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {anunciosFiltrados.map((item) => (
+                  <Thumb
+                    key={item.id}
+                    item={item}
+                    ativo={selecionado === item.id}
+                    onClick={() => {
+                      onSelecionar(item);
+                      setModalAberto(false);
+                    }}
+                    altura="h-[110px]"
+                  />
+                ))}
+              </div>
+              <p className="pt-2 text-xs font-medium text-muted-foreground">Publicações</p>
+            </div>
+          )}
+          {filtrados.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Nenhuma publicação com “{busca}” na legenda.
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {filtrados.map((item) => (
+                <Thumb
+                  key={item.id}
+                  item={item}
+                  ativo={selecionado === item.id}
+                  onClick={() => {
+                    onSelecionar(item);
+                    setModalAberto(false);
+                  }}
+                  altura="h-[110px]"
+                />
+              ))}
+            </div>
+          )}
+
+          {cursor && paginasExtras >= MAX_PAGINAS_EXTRAS && (
+            <div className="flex justify-center pt-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void carregar(cursor)}
+                disabled={carregandoMais}
+              >
+                {carregandoMais && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                Carregar mais
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    </ResponsiveModal>
+  );
+
+  if (selecionado && resumo) {
+    const ehAnuncio = anuncios.some((a) => a.id === selecionado);
+    return (
+      <>
+        <LinhaMidia
+          thumbnail={resumo.thumbnail_url}
+          titulo={tituloDaMidia({ caption_preview: resumo.caption_preview })}
+          tipo={ehAnuncio ? "anuncio" : "publicacao"}
+          // A legenda só vale como meta quando o título é a palavra; senão repete.
+          meta={palavraPedida(resumo.caption_preview) ? resumo.caption_preview ?? undefined : undefined}
+          acao={
+            <Button variant="ghost" className="h-10" onClick={() => setModalAberto(true)}>
+              Trocar
+            </Button>
+          }
+        />
+        {modal}
+      </>
+    );
+  }
+
   if (carregando) {
     return (
       <div className="flex items-center justify-center py-10 text-muted-foreground">
@@ -238,84 +349,7 @@ export const SelecionarPublicacao = ({
         </Button>
       </div>
 
-      <ResponsiveModal
-        open={modalAberto}
-        onOpenChange={setModalAberto}
-        title="Escolher publicação"
-        contentClassName="sm:max-w-2xl"
-      >
-        <div className="space-y-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              placeholder="Buscar pela legenda"
-              className="pl-9"
-              aria-label="Buscar publicação pela legenda"
-            />
-          </div>
-
-          <div className="max-h-[55vh] overflow-y-auto pr-1">
-            {anunciosFiltrados.length > 0 && (
-              <div className="mb-4 space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Anúncios que já receberam comentário
-                </p>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {anunciosFiltrados.map((item) => (
-                    <Thumb
-                      key={item.id}
-                      item={item}
-                      ativo={selecionado === item.id}
-                      onClick={() => {
-                        onSelecionar(item);
-                        setModalAberto(false);
-                      }}
-                      altura="h-[110px]"
-                    />
-                  ))}
-                </div>
-                <p className="pt-2 text-xs font-medium text-muted-foreground">Publicações</p>
-              </div>
-            )}
-            {filtrados.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                Nenhuma publicação com “{busca}” na legenda.
-              </p>
-            ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {filtrados.map((item) => (
-                  <Thumb
-                    key={item.id}
-                    item={item}
-                    ativo={selecionado === item.id}
-                    onClick={() => {
-                      onSelecionar(item);
-                      setModalAberto(false);
-                    }}
-                    altura="h-[110px]"
-                  />
-                ))}
-              </div>
-            )}
-
-            {cursor && paginasExtras >= MAX_PAGINAS_EXTRAS && (
-              <div className="flex justify-center pt-3">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void carregar(cursor)}
-                  disabled={carregandoMais}
-                >
-                  {carregandoMais && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-                  Carregar mais
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      </ResponsiveModal>
+      {modal}
     </div>
   );
 };
