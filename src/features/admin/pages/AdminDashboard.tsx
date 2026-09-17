@@ -24,6 +24,7 @@ import {
 import { useAdminPanelStore } from "@/stores/adminPanelStore";
 import { FiltroPeriodoAdmin } from "@/features/admin/components/FiltroPeriodoAdmin";
 import {
+  linkDoCardParaClientes,
   periodoParaApi,
   rotuloDoPeriodo,
   type ModoPeriodo,
@@ -153,22 +154,6 @@ export default function AdminDashboardPage() {
   // significa nada — a distinção precisa estar visível na tela.
   const badgePeriodo = rotuloDoPeriodo(modo);
 
-  // Destino do drill-down. O período viaja na URL para a lista somar exatamente
-  // o que o card somou — sem isso o admin clicaria num total de 12 meses e
-  // cairia numa lista do mês corrente, com números que não fecham.
-  const linkDoCard = (origem: "mrr" | "faturamento" | "churn") => {
-    const qs = new URLSearchParams({ origem });
-    if (periodo?.inicio) qs.set("inicio", periodo.inicio);
-    if (periodo?.fim) qs.set("fim", periodo.fim);
-    if (!periodo) {
-      // Modo mensal: manda as bordas do mês escolhido, para a lista não
-      // depender de adivinhar year/month.
-      const ultimo = new Date(Date.UTC(year, month, 0)).getUTCDate();
-      qs.set("inicio", `${year}-${String(month).padStart(2, "0")}-01`);
-      qs.set("fim", `${year}-${String(month).padStart(2, "0")}-${ultimo}`);
-    }
-    return `/admin/clients?${qs}`;
-  };
 
   const mrrRaw = trimLeadingEmpty(data.series?.mrr || []);
   const mrrSeries = mrrRaw.map((r) => ({ month: r.month, líquido: (r.net || 0) / 100 }));
@@ -194,14 +179,14 @@ export default function AdminDashboardPage() {
         <MetricCard
           title="MRR"
           badge="hoje"
-          para={linkDoCard("mrr")}
+          para={linkDoCardParaClientes("mrr", periodo, year, month)}
           value={centsToBRL(data.mrr_net_cents)}
           sub={`líquido · bruto ${centsToBRL(data.mrr_gross_cents)}`}
         />
         <MetricCard
           title="Faturamento"
           badge={badgePeriodo}
-          para={linkDoCard("faturamento")}
+          para={linkDoCardParaClientes("faturamento", periodo, year, month)}
           value={centsToBRL(data.revenue_net_cents)}
           sub={[
             `líquido · bruto ${centsToBRL(data.revenue_gross_cents)}`,
@@ -221,7 +206,7 @@ export default function AdminDashboardPage() {
         <MetricCard
           title="Churn"
           badge={badgePeriodo}
-          para={linkDoCard("churn")}
+          para={linkDoCardParaClientes("churn", periodo, year, month)}
           value={`${data.churn_count} canceladas · ${((data.churn_rate || 0) * 100).toFixed(1)}%`}
         />
         <MetricCard

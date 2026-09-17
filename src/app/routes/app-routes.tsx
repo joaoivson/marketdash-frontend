@@ -3,7 +3,7 @@
  * Configuração centralizada de rotas
  */
 
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { Suspense } from "react";
 import { tokenStorage } from "@/shared/lib/storage";
 import { useSubscriptionCheck } from "@/shared/hooks/useSubscriptionCheck";
@@ -56,6 +56,19 @@ import { AdminLayout } from "@/features/admin/components/AdminLayout";
 import PlanosPage from "@/features/dashboard/pages/PlanosPage";
 import { RequirePlan } from "@/app/routes/RequirePlan";
 import { RequireAdmin } from "@/app/routes/RequireAdmin";
+
+
+/** `/admin/clients` → `/admin/clientes`, preservando a query string.
+ *
+ * As rotas de TELA deste projeto são em português e as de API em inglês
+ * (`/api/v1/admin/clients`). Quem escreve um link olhando a API escreve o
+ * caminho inglês e toma 404 — aconteceu com o drill-down dos cards do dashboard
+ * em 17/09/2026, em produção. Redirecionar conserta também as URLs já salvas.
+ */
+function RedirecionaParaClientes() {
+  const { search } = useLocation();
+  return <Navigate to={`/admin/clientes${search}`} replace />;
+}
 
 // Loading fallback component
 const LoadingFallback = () => (
@@ -240,6 +253,13 @@ export const AppRoutes = () => {
         >
           <Route index element={<AdminDashboardPage />} />
           <Route path="clientes" element={<AdminClientsPage />} />
+          {/* As rotas de TELA deste projeto são em português e as de API em
+              inglês (`/api/v1/admin/clients`). Quem escreve um link olhando a
+              API escreve `/admin/clients` e toma 404 — aconteceu com o
+              drill-down dos cards em 17/09/2026, em produção. O redirecionamento
+              preserva a query string, então URL já salva ou compartilhada
+              continua funcionando. */}
+          <Route path="clients" element={<RedirecionaParaClientes />} />
           <Route path="clientes/:userId" element={<AdminClientDetailPage />} />
           <Route path="uso" element={<Navigate to="/admin/sincronizacoes?tab=uso" replace />} />
           <Route path="sincronizacoes" element={<AdminSyncStatusPage />} />
