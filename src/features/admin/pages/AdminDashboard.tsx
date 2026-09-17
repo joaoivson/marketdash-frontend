@@ -21,6 +21,12 @@ import {
   type AdminDashboard,
 } from "@/services/admin-panel.service";
 import { useAdminPanelStore } from "@/stores/adminPanelStore";
+import { FiltroPeriodoAdmin } from "@/features/admin/components/FiltroPeriodoAdmin";
+import {
+  periodoParaApi,
+  rotuloDoPeriodo,
+  type ModoPeriodo,
+} from "@/features/admin/components/periodo-admin";
 import { AdminChartTooltip, CHART_COLORS } from "@/features/admin/components/AdminChartTooltip";
 import {
   AXIS_PROPS,
@@ -77,32 +83,56 @@ function MetricCard({
 
 export default function AdminDashboardPage() {
   const { year, month } = useAdminPanelStore();
+  const [modo, setModo] = useState<ModoPeriodo>({ tipo: "mes" });
   const [data, setData] = useState<AdminDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // `periodo` entra como string na dependência: o objeto é recriado a cada
+  // render e um `useEffect` que dependesse dele buscaria em loop infinito.
+  const periodo = periodoParaApi(modo);
+  const chavePeriodo = JSON.stringify(periodo ?? null);
+
   useEffect(() => {
     setLoading(true);
-    fetchAdminDashboard(year, month)
+    fetchAdminDashboard(year, month, periodo)
       .then((d) => {
         setData(d);
         setError(null);
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Erro"))
       .finally(() => setLoading(false));
-  }, [year, month]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year, month, chavePeriodo]);
+
+  // O filtro fica FORA do early-return de loading: sumir com ele a cada troca de
+  // período faria a tela pular e o clique seguinte cair no vazio.
+  const filtro = <FiltroPeriodoAdmin modo={modo} onChange={setModo} />;
 
   if (loading) {
     return (
-      <div className="flex justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="space-y-6">
+        {filtro}
+        <div className="flex justify-center py-20">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
       </div>
     );
   }
 
   if (error || !data) {
-    return <p className="text-destructive">{error || "Sem dados"}</p>;
+    return (
+      <div className="space-y-6">
+        {filtro}
+        <p className="text-destructive">{error || "Sem dados"}</p>
+      </div>
+    );
   }
+
+  // Badge dos cards que dependem do período. Os de "hoje" (MRR, ativos, ARPU,
+  // LTV) NÃO recebem: são foto do instante, e somar MRR ao longo de meses não
+  // significa nada — a distinção precisa estar visível na tela.
+  const badgePeriodo = rotuloDoPeriodo(modo);
 
   const mrrRaw = trimLeadingEmpty(data.series?.mrr || []);
   const mrrSeries = mrrRaw.map((r) => ({ month: r.month, líquido: (r.net || 0) / 100 }));
@@ -122,6 +152,8 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="space-y-6">
+      {filtro}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           title="MRR"
@@ -131,6 +163,7 @@ export default function AdminDashboardPage() {
         />
         <MetricCard
           title="Faturamento"
+          badge={badgePeriodo}
           value={centsToBRL(data.revenue_net_cents)}
           sub={[
             `líquido · bruto ${centsToBRL(data.revenue_gross_cents)}`,
@@ -142,13 +175,19 @@ export default function AdminDashboardPage() {
             .join(" · ")}
         />
         <MetricCard title="Assinantes ativos" badge="hoje" value={String(data.active_count)} />
-        <MetricCard title="Novas assinaturas" value={String(data.new_subscriptions)} />
+        <MetricCard
+          title="Novas assinaturas"
+          badge={badgePeriodo}
+          value={String(data.new_subscriptions)}
+        />
         <MetricCard
           title="Churn"
+          badge={badgePeriodo}
           value={`${data.churn_count} canceladas · ${((data.churn_rate || 0) * 100).toFixed(1)}%`}
         />
         <MetricCard
           title="Taxa de renovação"
+          badge={badgePeriodo}
           value={
             data.renewal_rate == null ? "—" : `${((data.renewal_rate || 0) * 100).toFixed(1)}%`
           }
