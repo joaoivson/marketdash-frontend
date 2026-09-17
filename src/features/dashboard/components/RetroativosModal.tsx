@@ -95,6 +95,10 @@ export const RetroativosModal = ({
       description={automacao?.nome}
     >
       <div className="space-y-5">
+        {/* Regra da Meta, à vista: sem ela, "12 de 50" parece defeito. */}
+        <p className="text-xs text-muted-foreground">
+          A Meta permite 1 direct por comentário, em até 7 dias depois dele.
+        </p>
         {erro ? (
           <p className="text-sm text-destructive">{erro}</p>
         ) : !previa ? (
@@ -112,6 +116,12 @@ export const RetroativosModal = ({
                 {previa.total_comentarios === 1 ? "comentário pode" : "comentários podem"} receber o
                 direct agora
               </p>
+              {previa.elegiveis > 0 && (
+                <p className="mt-2 text-xs tabular-nums text-muted-foreground">
+                  {previa.elegiveis_ultimas_24h} das últimas 24h ·{" "}
+                  {previa.elegiveis - previa.elegiveis_ultimas_24h} entre 1 e 7 dias
+                </p>
+              )}
               {previa.primeiro_expira_em && (
                 <p className="mt-2 text-xs text-amber-500">
                   O mais antigo deixa de poder receber em{" "}
