@@ -319,8 +319,12 @@ const AutomacaoEditor = () => {
             </Button>
           </div>
         )}
+        {/* min-w-0 nas duas colunas: item de grid tem min-width:auto e cresce até
+            caber a linha mais longa sem quebra (a legenda truncada da lista "Onde
+            responde"). Sem isto a coluna do formulário empurrava o preview para
+            fora da tela e o celular ganhava rolagem horizontal. */}
         <div className="grid gap-6 lg:grid-cols-[62fr_38fr]">
-          <div className="space-y-6">
+          <div className="min-w-0 space-y-6">
             <div className="space-y-2">
               <Label htmlFor="nome">Nome da automação</Label>
               <Input
@@ -707,7 +711,7 @@ const AutomacaoEditor = () => {
           </div>
 
           {/* Preview sticky */}
-          <div className="lg:sticky lg:top-4 lg:self-start">
+          <div className="min-w-0 lg:sticky lg:top-4 lg:self-start">
             <AutomacaoPreview
               thumbnailUrl={form.media_thumbnail_url}
               palavraExemplo={
