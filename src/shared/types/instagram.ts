@@ -44,6 +44,14 @@ export interface InstagramMediaItem {
    * vez de chutar, porque palavra errada = link errado para a cliente.
    */
   palavra_sugerida: string | null;
+  /**
+   * Mídia de ANÚNCIO descoberta pelo primeiro comentário (não existe no feed nem
+   * em /media). A tela mostra com a tag "Anúncio".
+   */
+  eh_anuncio?: boolean;
+  ad_title?: string | null;
+  comentarios?: number | null;
+  ultimo_comentario_em?: string | null;
 }
 
 export interface InstagramMediaPage {
