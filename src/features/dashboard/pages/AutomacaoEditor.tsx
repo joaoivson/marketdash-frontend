@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { EmojiPicker } from "@/components/shared/EmojiPicker";
+import { AnunciosVinculados } from "@/features/dashboard/components/AnunciosVinculados";
 import { AutomacaoPreview } from "@/features/dashboard/components/AutomacaoPreview";
 import { InserirLinkModal } from "@/features/dashboard/components/InserirLinkModal";
 import { RetroativosModal } from "@/features/dashboard/components/RetroativosModal";
@@ -148,6 +149,7 @@ const AutomacaoEditor = () => {
     nome: string;
     status: AutomacaoStatus;
     escopo: AutomacaoEscopo;
+    anuncios_vinculados: string[];
   } | null>(null);
   const [modalRetroativos, setModalRetroativos] = useState(false);
 
@@ -159,7 +161,13 @@ const AutomacaoEditor = () => {
     if (!editando) return;
     getAutomation(Number(id))
       .then((a) => {
-        setSalva({ id: a.id, nome: a.nome, status: a.status, escopo: a.escopo });
+        setSalva({
+          id: a.id,
+          nome: a.nome,
+          status: a.status,
+          escopo: a.escopo,
+          anuncios_vinculados: a.anuncios_vinculados ?? [],
+        });
         setForm({
           nome: a.nome,
           escopo: a.escopo,
@@ -420,6 +428,17 @@ const AutomacaoEditor = () => {
                       media_caption_preview: item.caption_preview,
                       media_permalink: item.permalink,
                     })
+                  }
+                />
+              )}
+
+              {salva && salva.escopo === "post_especifico" && form.escopo === "post_especifico" && (
+                <AnunciosVinculados
+                  automacaoId={salva.id}
+                  palavras={form.palavras}
+                  vinculados={salva.anuncios_vinculados}
+                  onSalvo={(a) =>
+                    setSalva((s) => (s ? { ...s, anuncios_vinculados: a.anuncios_vinculados } : s))
                   }
                 />
               )}

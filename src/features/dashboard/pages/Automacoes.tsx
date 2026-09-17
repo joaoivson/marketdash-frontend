@@ -105,6 +105,10 @@ const AutomacaoCard = ({
             )}
             <span className="text-xs text-muted-foreground">
               {ROTULO_ESCOPO[automacao.escopo] ?? automacao.escopo}
+              {(automacao.anuncios_vinculados?.length ?? 0) > 0 &&
+                ` + ${automacao.anuncios_vinculados.length} ${
+                  automacao.anuncios_vinculados.length === 1 ? "anúncio" : "anúncios"
+                }`}
             </span>
           </div>
 
