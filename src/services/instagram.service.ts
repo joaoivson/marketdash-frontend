@@ -8,6 +8,8 @@ import type {
   InstagramAutomationPayload,
   InstagramConnection,
   InstagramMediaPage,
+  RetroativoEnvio,
+  RetroativoPrevia,
 } from "@/shared/types/instagram";
 
 const BASE = "/api/v1/instagram";
@@ -150,4 +152,22 @@ export const duplicateAutomation = async (id: number): Promise<InstagramAutomati
 export const deleteAutomation = async (id: number): Promise<void> => {
   const res = await fetchWithAuth(getApiUrl(`${BASE}/automations/${id}`), { method: "DELETE" });
   if (!res.ok && res.status !== 204) throw await erroDaResposta(res, "Erro ao excluir");
+};
+
+// ------------------------------------------------------------ retroativos --
+
+/** Lê os comentários do post e diz quantos ainda podem receber o direct. Não envia. */
+export const getRetroativosPrevia = async (id: number): Promise<RetroativoPrevia> => {
+  const res = await fetchWithAuth(getApiUrl(`${BASE}/automations/${id}/retroativos`));
+  if (!res.ok) throw await erroDaResposta(res, "Erro ao ler os comentários da publicação");
+  return (await res.json()) as RetroativoPrevia;
+};
+
+/** Enfileira os directs dos elegíveis — o backend recalcula a lista na hora. */
+export const enviarRetroativos = async (id: number): Promise<RetroativoEnvio> => {
+  const res = await fetchWithAuth(getApiUrl(`${BASE}/automations/${id}/retroativos`), {
+    method: "POST",
+  });
+  if (!res.ok) throw await erroDaResposta(res, "Erro ao enviar os directs");
+  return (await res.json()) as RetroativoEnvio;
 };

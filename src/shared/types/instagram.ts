@@ -145,3 +145,28 @@ export interface AutomacaoLoteResultado {
   /** Nunca omitir na tela: é o post que continua sem responder comentário. */
   puladas: AutomacaoLotePulada[];
 }
+
+/**
+ * Prévia do envio retroativo. Os grupos são exclusivos e somam
+ * `total_comentarios` — cada comentário sabe por que ficou de fora.
+ */
+export interface RetroativoPrevia {
+  automation_id: number;
+  total_comentarios: number;
+  elegiveis: number;
+  ja_respondidos: number;
+  ja_processados: number;
+  sem_palavra: number;
+  pessoa_ja_recebeu: number;
+  /** Mais de 7 dias: a Meta não aceita mais o direct por comentário. */
+  fora_da_janela: number;
+  da_propria_conta: number;
+  truncado: boolean;
+  /** Quando o elegível mais antigo deixa de poder receber (ISO). */
+  primeiro_expira_em: string | null;
+}
+
+export interface RetroativoEnvio {
+  enfileirados: number;
+  previa: RetroativoPrevia;
+}
