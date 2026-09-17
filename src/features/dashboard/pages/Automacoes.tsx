@@ -135,6 +135,19 @@ const AutomacaoCard = ({
             </span>
             <span>{automacao.directs_enviados} directs enviados</span>
           </p>
+
+          {/* Botão à vista, não no ⋮: escondido no menu, ninguém achou (17/09). */}
+          {aceitaRetroativo && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-1 h-8"
+              onClick={onRetroativos}
+              disabled={ocupado}
+            >
+              <Send className="mr-2 h-3.5 w-3.5" /> Enviar para quem já comentou
+            </Button>
+          )}
         </div>
 
         <div className="flex items-center gap-2 sm:flex-shrink-0">
@@ -173,11 +186,6 @@ const AutomacaoCard = ({
                   <Pencil className="mr-2 h-4 w-4" /> Editar
                 </Link>
               </DropdownMenuItem>
-              {aceitaRetroativo && (
-                <DropdownMenuItem onClick={onRetroativos}>
-                  <Send className="mr-2 h-4 w-4" /> Enviar para quem já comentou
-                </DropdownMenuItem>
-              )}
               <DropdownMenuItem onClick={onDuplicar}>
                 <Copy className="mr-2 h-4 w-4" /> Duplicar
               </DropdownMenuItem>
@@ -385,7 +393,11 @@ const Automacoes = () => {
         )}
       </div>
 
-      <RetroativosModal automacao={retroativos} onFechar={() => setRetroativos(null)} />
+      <RetroativosModal
+        automacao={retroativos}
+        onFechar={() => setRetroativos(null)}
+        onEnviado={() => void carregar()}
+      />
 
       <AlertDialog open={!!paraExcluir} onOpenChange={(aberto) => !aberto && setParaExcluir(null)}>
         <AlertDialogContent>

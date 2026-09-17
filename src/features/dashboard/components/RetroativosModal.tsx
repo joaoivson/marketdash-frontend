@@ -26,10 +26,13 @@ const formatarPrazo = (iso: string) =>
 export const RetroativosModal = ({
   automacao,
   onFechar,
+  onEnviado,
 }: {
   /** `null` = modal fechado. */
-  automacao: InstagramAutomation | null;
+  automacao: Pick<InstagramAutomation, "id" | "nome" | "status"> | null;
   onFechar: () => void;
+  /** Chamado depois do envio — a lista recarrega os contadores. */
+  onEnviado?: () => void;
 }) => {
   const { toast } = useToast();
   const [previa, setPrevia] = useState<RetroativoPrevia | null>(null);
@@ -59,6 +62,7 @@ export const RetroativosModal = ({
           enfileirados === 1 ? "1 direct na fila" : `${enfileirados} directs na fila`,
         description: "Eles saem aos poucos, alguns segundos entre um e outro.",
       });
+      onEnviado?.();
       onFechar();
     } catch (e) {
       toast({
