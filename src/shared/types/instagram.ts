@@ -162,6 +162,8 @@ export interface RetroativoPrevia {
   automation_id: number;
   total_comentarios: number;
   elegiveis: number;
+  /** Dos elegíveis, quantos são das últimas 24h. */
+  elegiveis_ultimas_24h: number;
   ja_respondidos: number;
   ja_processados: number;
   sem_palavra: number;
