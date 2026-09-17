@@ -50,6 +50,9 @@ export type AdminDashboard = {
 };
 
 export type AdminClient = {
+  /** Só vem no drill-down do card de Faturamento: quanto ESTE cliente pagou
+   *  dentro do período. É o que permite conferir que a lista soma o card. */
+  valor_no_periodo_cents?: number;
   user_id: number | null;
   name: string;
   email: string;
