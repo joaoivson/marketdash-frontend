@@ -3,7 +3,6 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   Copy,
   Instagram,
-  Layers,
   Loader2,
   MessageCircle,
   MoreVertical,
@@ -293,16 +292,9 @@ const Automacoes = () => {
   return (
     <DashboardLayout title="Automação Instagram">
       <div className="space-y-5">
+        {/* "Cobrir publicações" (lote) saiu da tela a pedido do João em 17/09. A
+            rota /dashboard/automacoes/em-lote continua existindo. */}
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {/* Uma automação cobre UM post, e conta de promoção publica todo dia.
-              Sem este caminho, cobrir o acervo é inviável na mão. */}
-          <Button
-            variant="outline"
-            onClick={() => navigate("/dashboard/automacoes/em-lote")}
-            disabled={semConexao}
-          >
-            <Layers className="mr-2 h-4 w-4" /> Cobrir publicações
-          </Button>
           <Button
             onClick={() => navigate("/dashboard/automacoes/nova")}
             disabled={semConexao}
