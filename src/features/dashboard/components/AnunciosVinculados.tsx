@@ -1,28 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Plus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { MiniaturaInstagram } from "@/features/dashboard/components/MiniaturaInstagram";
+import { Skeleton } from "@/components/ui/skeleton";
+import { LinhaMidia } from "@/features/dashboard/components/LinhaMidia";
+import { tituloDaMidia } from "@/shared/lib/instagram-midia";
+import { VincularAnunciosModal } from "@/features/dashboard/components/VincularAnunciosModal";
 import { useToast } from "@/hooks/use-toast";
 import { listInstagramAnuncios, setAutomationAnuncios } from "@/services/instagram.service";
-import { cn } from "@/shared/lib/utils";
 import type { InstagramAutomation, InstagramMediaItem } from "@/shared/types/instagram";
 
 /** Mesma normalização do backend para comparar "ALGODÃO" com "algodao". */
 const normalizar = (texto: string) =>
   texto.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
 
+// Palavras que TODA automação tem: casar por elas sugeriria todos os anúncios.
+const GENERICAS = new Set(["quero", "eu quero", "link", "manda", "preco", "valor", "eu"]);
+
 /**
- * Anúncios do mesmo produto que esta automação também responde.
+ * Anúncios do mesmo produto, como linhas da lista "Onde responde".
  *
  * O anúncio é o mesmo vídeo impulsionado, com a mesma legenda e o mesmo link — a
- * aluna pensa no PRODUTO. Sem o vínculo, o card do produto contava só o post
- * orgânico (5 comentários) e o anúncio (29) ficava sem resposta.
- *
- * Sugere pela palavra que a legenda do anúncio pede ("Comente ALGODÃO") contra
- * as palavras da automação. Salva à parte do formulário: o vínculo vale na hora
- * e não depende de publicar de novo.
+ * aluna pensa no PRODUTO. Sem o vínculo, o card contava só o post orgânico e o
+ * anúncio ficava sem resposta. A escolha fica num modal: a lista aberta dentro
+ * do formulário tinha 18 linhas e empurrava o resto da tela.
  */
 export const AnunciosVinculados = ({
   automacaoId,
@@ -37,7 +38,7 @@ export const AnunciosVinculados = ({
 }) => {
   const { toast } = useToast();
   const [anuncios, setAnuncios] = useState<InstagramMediaItem[] | null>(null);
-  const [marcados, setMarcados] = useState<Set<string>>(new Set(vinculados));
+  const [modal, setModal] = useState(false);
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
@@ -46,47 +47,35 @@ export const AnunciosVinculados = ({
       .catch(() => setAnuncios([]));
   }, []);
 
-  useEffect(() => setMarcados(new Set(vinculados)), [vinculados]);
-
-  const chaves = useMemo(() => new Set(palavras.map(normalizar)), [palavras]);
-
-  const ordenados = useMemo(() => {
-    const sugerido = (a: InstagramMediaItem) =>
-      !!a.palavra_sugerida && chaves.has(normalizar(a.palavra_sugerida));
-    return [...(anuncios ?? [])].sort(
-      (a, b) =>
-        Number(vinculados.includes(b.id)) - Number(vinculados.includes(a.id)) ||
-        Number(sugerido(b)) - Number(sugerido(a)) ||
-        (b.comentarios ?? 0) - (a.comentarios ?? 0),
+  // Sugere quando a palavra que a legenda pede, ou uma palavra específica da
+  // automação ("boddy", "luminária"), aparece no anúncio.
+  const sugeridos = useMemo(() => {
+    const chaves = palavras.map(normalizar).filter((p) => p.length >= 4 && !GENERICAS.has(p));
+    return new Set(
+      (anuncios ?? [])
+        .filter((a) => {
+          const pedida = a.palavra_sugerida ? normalizar(a.palavra_sugerida) : "";
+          const legenda = normalizar(`${a.caption_preview || ""} ${a.ad_title || ""}`);
+          return (pedida && chaves.includes(pedida)) || chaves.some((c) => legenda.includes(c));
+        })
+        .map((a) => a.id),
     );
-  }, [anuncios, chaves, vinculados]);
+  }, [anuncios, palavras]);
 
-  const mudou =
-    marcados.size !== vinculados.length || vinculados.some((id) => !marcados.has(id));
-
-  const alternar = (id: string) =>
-    setMarcados((atual) => {
-      const novo = new Set(atual);
-      if (novo.has(id)) novo.delete(id);
-      else novo.add(id);
-      return novo;
-    });
-
-  const salvar = async () => {
+  const salvar = async (ids: string[], mensagem?: string) => {
     setSalvando(true);
     try {
-      const atualizada = await setAutomationAnuncios(automacaoId, [...marcados]);
+      const atualizada = await setAutomationAnuncios(automacaoId, ids);
+      const n = atualizada.anuncios_vinculados.length;
       toast({
-        title:
-          atualizada.anuncios_vinculados.length === 1
-            ? "1 anúncio vinculado"
-            : `${atualizada.anuncios_vinculados.length} anúncios vinculados`,
-        description: "Os próximos comentários neles já recebem o direct desta automação.",
+        title: mensagem ?? (n === 1 ? "1 anúncio vinculado" : `${n} anúncios vinculados`),
+        description: n > 0 ? "Os próximos comentários neles já recebem este direct." : undefined,
       });
       onSalvo(atualizada);
+      setModal(false);
     } catch (e) {
       toast({
-        title: "Não foi possível vincular",
+        title: "Não foi possível salvar os anúncios",
         description: (e as Error).message,
         variant: "destructive",
       });
@@ -97,59 +86,81 @@ export const AnunciosVinculados = ({
 
   if (anuncios === null) {
     return (
-      <p className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Procurando anúncios…
-      </p>
+      <div className="flex items-center gap-3 p-3">
+        <Skeleton className="h-12 w-12 rounded-lg" />
+        <div className="flex-1 space-y-2">
+          <Skeleton className="h-3.5 w-32" />
+          <Skeleton className="h-3 w-24" />
+        </div>
+      </div>
     );
   }
-  if (anuncios.length === 0) return null;
+
+  const porId = new Map(anuncios.map((a) => [a.id, a]));
+  const pendentesSugeridos = [...sugeridos].filter((id) => !vinculados.includes(id)).length;
 
   return (
-    <div className="space-y-3 rounded-lg border border-border p-3">
-      <div>
-        <p className="text-sm font-medium text-foreground">Anúncios deste produto</p>
-        <p className="text-xs text-muted-foreground">
-          Marque os anúncios que devem responder com esta automação.
-        </p>
-      </div>
-
-      <ul className="max-h-72 space-y-1 overflow-y-auto pr-1">
-        {ordenados.map((a) => {
-          const sugerido = !!a.palavra_sugerida && chaves.has(normalizar(a.palavra_sugerida));
-          const emOutra =
-            a.automation_id_vinculada != null && a.automation_id_vinculada !== automacaoId;
-          return (
-            <li key={a.id}>
-              <label
-                className={cn(
-                  "flex cursor-pointer items-center gap-3 rounded-md p-2 hover:bg-muted/50",
-                  marcados.has(a.id) && "bg-primary/5",
-                )}
+    <>
+      {vinculados.map((id) => {
+        const a = porId.get(id);
+        return (
+          <LinhaMidia
+            key={id}
+            thumbnail={a?.thumbnail_url}
+            titulo={a ? tituloDaMidia(a) : "Anúncio"}
+            tipo="anuncio"
+            meta={a ? `${a.comentarios ?? 0} comentários` : undefined}
+            acao={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10"
+                aria-label="Desvincular anúncio"
+                disabled={salvando}
+                onClick={() =>
+                  void salvar(
+                    vinculados.filter((v) => v !== id),
+                    "Anúncio desvinculado",
+                  )
+                }
               >
-                <Checkbox checked={marcados.has(a.id)} onCheckedChange={() => alternar(a.id)} />
-                <MiniaturaInstagram url={a.thumbnail_url} className="h-10 w-10 flex-shrink-0" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs text-foreground">
-                    {a.caption_preview || a.ad_title || "Anúncio"}
-                  </span>
-                  <span className="block text-[11px] text-muted-foreground">
-                    {a.comentarios ?? 0} comentários
-                    {sugerido && <span className="text-amber-500"> · mesma palavra-chave</span>}
-                    {emOutra && " · hoje em outra automação"}
-                  </span>
-                </span>
-              </label>
-            </li>
-          );
-        })}
-      </ul>
+                <X className="h-4 w-4" />
+              </Button>
+            }
+          />
+        );
+      })}
 
-      <div className="flex justify-end">
-        <Button size="sm" onClick={() => void salvar()} disabled={!mudou || salvando}>
-          {salvando && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-          Salvar anúncios
-        </Button>
-      </div>
-    </div>
+      {anuncios.length === 0 ? (
+        <p className="p-3 text-xs text-muted-foreground">
+          Nenhum anúncio detectado ainda. Ele aparece aqui depois do primeiro comentário.
+        </p>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setModal(true)}
+          className="flex min-h-12 w-full items-center gap-2 px-3 py-2 text-left text-sm text-primary transition-colors duration-150 hover:bg-accent/50"
+        >
+          <Plus className="h-4 w-4 flex-shrink-0" />
+          <span className="flex-1">Vincular anúncio</span>
+          {pendentesSugeridos > 0 && (
+            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-500">
+              {pendentesSugeridos} {pendentesSugeridos === 1 ? "sugerido" : "sugeridos"}
+            </span>
+          )}
+        </button>
+      )}
+
+      <VincularAnunciosModal
+        aberto={modal}
+        onFechar={() => setModal(false)}
+        anuncios={anuncios}
+        sugeridos={sugeridos}
+        vinculados={vinculados}
+        automacaoId={automacaoId}
+        salvando={salvando}
+        onSalvar={(ids) => void salvar(ids)}
+      />
+    </>
   );
 };

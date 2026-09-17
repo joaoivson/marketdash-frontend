@@ -261,6 +261,15 @@ const AutomacaoEditor = () => {
     status,
   });
 
+  const escolherPublicacao = (item: InstagramMediaItem) =>
+    setForm((f) => ({
+      ...f,
+      media_id: item.id,
+      media_thumbnail_url: item.thumbnail_url,
+      media_caption_preview: item.caption_preview,
+      media_permalink: item.permalink,
+    }));
+
   const salvar = async (status: "ativa" | "rascunho") => {
     setSalvando(true);
     try {
@@ -417,30 +426,50 @@ const AutomacaoEditor = () => {
                 />
               )}
 
-              {form.escopo === "post_especifico" && (
+              {form.escopo === "post_especifico" && !form.media_id && (
                 <SelecionarPublicacao
                   selecionado={form.media_id}
-                  onSelecionar={(item: InstagramMediaItem) =>
-                    setForm({
-                      ...form,
-                      media_id: item.id,
-                      media_thumbnail_url: item.thumbnail_url,
-                      media_caption_preview: item.caption_preview,
-                      media_permalink: item.permalink,
-                    })
-                  }
+                  onSelecionar={escolherPublicacao}
                 />
               )}
 
-              {salva && salva.escopo === "post_especifico" && form.escopo === "post_especifico" && (
-                <AnunciosVinculados
-                  automacaoId={salva.id}
-                  palavras={form.palavras}
-                  vinculados={salva.anuncios_vinculados}
-                  onSalvo={(a) =>
-                    setSalva((s) => (s ? { ...s, anuncios_vinculados: a.anuncios_vinculados } : s))
-                  }
-                />
+              {/* Escolhida a mídia, o bloco vira a lista "onde responde": a
+                  publicação e os anúncios do mesmo produto, lado a lado. Antes
+                  eram duas áreas soltas e a aluna não entendia que o anúncio
+                  vinculado responde com o MESMO direct. */}
+              {form.escopo === "post_especifico" && form.media_id && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">Onde responde</p>
+                  <div className="overflow-hidden rounded-xl border border-border divide-y divide-border">
+                    <SelecionarPublicacao
+                      selecionado={form.media_id}
+                      resumo={{
+                        thumbnail_url: form.media_thumbnail_url,
+                        caption_preview: form.media_caption_preview,
+                      }}
+                      onSelecionar={escolherPublicacao}
+                    />
+                    {salva && salva.escopo === "post_especifico" ? (
+                      <AnunciosVinculados
+                        automacaoId={salva.id}
+                        palavras={form.palavras}
+                        vinculados={salva.anuncios_vinculados}
+                        onSalvo={(a) =>
+                          setSalva((s) =>
+                            s ? { ...s, anuncios_vinculados: a.anuncios_vinculados } : s,
+                          )
+                        }
+                      />
+                    ) : (
+                      <p className="p-3 text-xs text-muted-foreground">
+                        Salve a automação para vincular anúncios do mesmo produto.
+                      </p>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Comentários na publicação e nos anúncios desta lista recebem o mesmo direct.
+                  </p>
+                </div>
               )}
 
             </CardNumerado>
