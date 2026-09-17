@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ResponsiveModal } from "@/components/shared/ResponsiveModal";
 import { useToast } from "@/hooks/use-toast";
-import { listInstagramMedia } from "@/services/instagram.service";
+import { listInstagramAnuncios, listInstagramMedia } from "@/services/instagram.service";
 import { cn } from "@/shared/lib/utils";
 import type { InstagramMediaItem } from "@/shared/types/instagram";
 
@@ -13,6 +13,10 @@ import type { InstagramMediaItem } from "@/shared/types/instagram";
 const VISIVEIS = 4;
 /** Teto de páginas puxadas ao abrir o modal, para a busca ver a lista toda. */
 const MAX_PAGINAS_EXTRAS = 12;
+
+/** Busca na legenda e, no anúncio, no título que a Meta manda no webhook. */
+const casaBusca = (i: InstagramMediaItem, termo: string) =>
+  `${i.caption_preview || ""} ${i.ad_title || ""}`.toLowerCase().includes(termo);
 
 const Thumb = ({
   item,
@@ -34,24 +38,35 @@ const Thumb = ({
     )}
     aria-pressed={ativo}
   >
-    {item.thumbnail_url ? (
-      <img
-        src={item.thumbnail_url}
-        alt=""
-        className={cn("w-full object-cover", altura)}
-        loading="lazy"
-        onError={(e) => {
-          (e.currentTarget as HTMLImageElement).style.visibility = "hidden";
-        }}
-      />
-    ) : (
-      <span className={cn("flex w-full items-center justify-center bg-muted", altura)}>
-        <Instagram className="h-5 w-5 text-muted-foreground" />
-      </span>
-    )}
+    <span className="relative block">
+      {item.eh_anuncio && (
+        <span className="absolute left-1.5 top-1.5 z-10 rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold text-black">
+          Anúncio
+        </span>
+      )}
+      {item.thumbnail_url ? (
+        <img
+          src={item.thumbnail_url}
+          alt=""
+          className={cn("w-full object-cover", altura)}
+          loading="lazy"
+          onError={(e) => {
+            (e.currentTarget as HTMLImageElement).style.visibility = "hidden";
+          }}
+        />
+      ) : (
+        <span className={cn("flex w-full items-center justify-center bg-muted", altura)}>
+          <Instagram className="h-5 w-5 text-muted-foreground" />
+        </span>
+      )}
+    </span>
     <span className="block space-y-0.5 px-2 py-1.5">
       <span className="block text-[10px] text-muted-foreground">
-        {item.timestamp ? new Date(item.timestamp).toLocaleDateString("pt-BR") : "—"}
+        {item.eh_anuncio
+          ? `${item.comentarios ?? 0} ${item.comentarios === 1 ? "comentário" : "comentários"}`
+          : item.timestamp
+            ? new Date(item.timestamp).toLocaleDateString("pt-BR")
+            : "—"}
         {item.media_product_type === "REELS" ? " · Reels" : ""}
       </span>
       <span className="block truncate text-[11px] text-foreground">
@@ -83,6 +98,8 @@ export const SelecionarPublicacao = ({
 }) => {
   const { toast } = useToast();
   const [itens, setItens] = useState<InstagramMediaItem[]>([]);
+  // Anúncio não está no feed: só aparece aqui depois do primeiro comentário.
+  const [anuncios, setAnuncios] = useState<InstagramMediaItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [carregandoMais, setCarregandoMais] = useState(false);
@@ -110,8 +127,18 @@ export const SelecionarPublicacao = ({
     }
   };
 
+  const carregarAnuncios = async () => {
+    try {
+      setAnuncios((await listInstagramAnuncios()).items);
+    } catch {
+      // Anúncio é complemento: sem ele a grade de publicações segue funcionando.
+      setAnuncios([]);
+    }
+  };
+
   useEffect(() => {
     void carregar();
+    void carregarAnuncios();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -131,15 +158,19 @@ export const SelecionarPublicacao = ({
   const emDestaque = useMemo(() => {
     const primeiros = itens.slice(0, VISIVEIS);
     if (!selecionado || primeiros.some((i) => i.id === selecionado)) return primeiros;
-    const escolhida = itens.find((i) => i.id === selecionado);
+    const escolhida = [...anuncios, ...itens].find((i) => i.id === selecionado);
     return escolhida ? [escolhida, ...primeiros.slice(0, VISIVEIS - 1)] : primeiros;
-  }, [itens, selecionado]);
+  }, [itens, anuncios, selecionado]);
 
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
-    if (!termo) return itens;
-    return itens.filter((i) => (i.caption_preview || "").toLowerCase().includes(termo));
+    return termo ? itens.filter((i) => casaBusca(i, termo)) : itens;
   }, [itens, busca]);
+
+  const anunciosFiltrados = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+    return termo ? anuncios.filter((i) => casaBusca(i, termo)) : anuncios;
+  }, [anuncios, busca]);
 
   if (carregando) {
     return (
@@ -175,15 +206,34 @@ export const SelecionarPublicacao = ({
       </div>
 
       <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0 text-xs"
+            onClick={() => setModalAberto(true)}
+          >
+            Escolher outra publicação
+          </Button>
+          {anuncios.length > 0 && (
+            <Button
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-xs text-amber-500"
+              onClick={() => setModalAberto(true)}
+            >
+              Anúncios ({anuncios.length})
+            </Button>
+          )}
+        </div>
         <Button
-          variant="link"
+          variant="ghost"
           size="sm"
-          className="h-auto p-0 text-xs"
-          onClick={() => setModalAberto(true)}
+          onClick={() => {
+            void carregar(null, true);
+            void carregarAnuncios();
+          }}
         >
-          Escolher outra publicação
-        </Button>
-        <Button variant="ghost" size="sm" onClick={() => void carregar(null, true)}>
           <RefreshCw className="mr-2 h-3.5 w-3.5" /> Atualizar
         </Button>
       </div>
@@ -207,6 +257,28 @@ export const SelecionarPublicacao = ({
           </div>
 
           <div className="max-h-[55vh] overflow-y-auto pr-1">
+            {anunciosFiltrados.length > 0 && (
+              <div className="mb-4 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Anúncios que já receberam comentário
+                </p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {anunciosFiltrados.map((item) => (
+                    <Thumb
+                      key={item.id}
+                      item={item}
+                      ativo={selecionado === item.id}
+                      onClick={() => {
+                        onSelecionar(item);
+                        setModalAberto(false);
+                      }}
+                      altura="h-[110px]"
+                    />
+                  ))}
+                </div>
+                <p className="pt-2 text-xs font-medium text-muted-foreground">Publicações</p>
+              </div>
+            )}
             {filtrados.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 Nenhuma publicação com “{busca}” na legenda.

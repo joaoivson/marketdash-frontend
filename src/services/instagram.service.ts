@@ -71,6 +71,13 @@ export const listInstagramMedia = async (
   return (await res.json()) as InstagramMediaPage;
 };
 
+/** Anúncios que já receberam comentário — não aparecem em /media. */
+export const listInstagramAnuncios = async (): Promise<InstagramMediaPage> => {
+  const res = await fetchWithAuth(getApiUrl(`${BASE}/anuncios`));
+  if (!res.ok) throw await erroDaResposta(res, "Erro ao carregar seus anúncios");
+  return (await res.json()) as InstagramMediaPage;
+};
+
 export const listInstagramStories = async (): Promise<InstagramMediaPage> => {
   const res = await fetchWithAuth(getApiUrl(`${BASE}/stories`));
   if (!res.ok) throw await erroDaResposta(res, "Erro ao carregar seus stories");
