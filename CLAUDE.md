@@ -18,7 +18,25 @@ npx tsc -p tsconfig.app.json --noEmit   # Type check REAL do src/ (ver aviso aba
 para produção por cherry-pick em `main`, não por merge da develop** — a develop
 acumula módulos não promovidos. Procedimento completo no `CLAUDE.md` da raiz do
 monorepo, seção "Branches e deploy", e em
-`marketdash-backend/docs/PROMOCAO_PARA_PRODUCAO.md` §9.
+`marketdash-backend/docs/PROMOCAO_PARA_PRODUCAO.md` §9 e §10.
+
+**Desde 17/09/2026 o build da imagem é no GitHub Actions, nunca no VPS** — o
+Coolify só puxa do GHCR. Três consequências para quem mexe aqui:
+
+1. **As `VITE_*` vêm de GitHub Variables** (`vars.VITE_SUPABASE_URL_PROD`,
+   `…_HML` etc.), **não mais do painel do Coolify**. Trocar chave de Supabase é
+   `gh variable set`, e o build passa a falhar de propósito se vier vazia
+   (`supabase.ts` lança no import e a tela ficaria branca).
+2. **Uma imagem por ambiente**: `prod-<sha>` e `hml-<sha>` são artefatos
+   diferentes, porque o Vite grava as variáveis INLINE no bundle. Subir o de um
+   no outro dá 401 em toda chamada autenticada.
+3. **O deploy de produção espera aprovação** no GitHub Actions. Push em `main`
+   constrói e publica, mas a troca do container só acontece depois do clique.
+   Rollback: `gh workflow run deploy-production.yml -f tag=prod-<sha-anterior>`.
+
+A baseline de erros de tipo **difere por branch**: `develop` 25, `main` 26. Um
+cherry-pick que esqueça disso reprova no `validate` por um commit que não tocou
+em tipo nenhum.
 
 ⚠️ `npx tsc --noEmit` na raiz do projeto **não valida nada** (`tsconfig.json`
 tem `"files": []` e só referencia os subprojetos). Use
