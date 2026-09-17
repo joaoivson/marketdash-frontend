@@ -9,11 +9,13 @@ import {
   MoreVertical,
   Pencil,
   Plus,
+  Send,
   Trash2,
 } from "lucide-react";
 
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { MiniaturaInstagram } from "@/features/dashboard/components/MiniaturaInstagram";
+import { RetroativosModal } from "@/features/dashboard/components/RetroativosModal";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -60,6 +62,7 @@ const AutomacaoCard = ({
   onToggle,
   onDuplicar,
   onExcluir,
+  onRetroativos,
   ocupado,
   recebendoComentarios,
 }: {
@@ -67,6 +70,7 @@ const AutomacaoCard = ({
   onToggle: (ativa: boolean) => void;
   onDuplicar: () => void;
   onExcluir: () => void;
+  onRetroativos: () => void;
   ocupado: boolean;
   /** A conta está inscrita no webhook? Se não, ativar seria mentira. */
   recebendoComentarios: boolean;
@@ -74,6 +78,9 @@ const AutomacaoCard = ({
   const ativa = automacao.status === "ativa";
   const rascunho = automacao.status === "rascunho";
   const palavras = automacao.trigger_tipo === "qualquer" ? ["qualquer palavra"] : automacao.palavras;
+  // Retroativo lê os comentários de UM post — "qualquer publicação" e story não
+  // têm um post para ler.
+  const aceitaRetroativo = automacao.escopo === "post_especifico" && !rascunho;
 
   return (
     <Card>
@@ -119,7 +126,14 @@ const AutomacaoCard = ({
           </div>
 
           <p className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
-            <span>{automacao.comentarios_capturados} comentários capturados</span>
+            {/* Conta só quem casou com a automação — sem a palavra, nem entra. Com
+                "capturados" a aluna lia como o total do post e achava que faltava. */}
+            <span>
+              {automacao.comentarios_capturados}{" "}
+              {automacao.trigger_tipo === "qualquer"
+                ? "comentários capturados"
+                : "comentários com a palavra-chave"}
+            </span>
             <span>{automacao.directs_enviados} directs enviados</span>
           </p>
         </div>
@@ -160,6 +174,11 @@ const AutomacaoCard = ({
                   <Pencil className="mr-2 h-4 w-4" /> Editar
                 </Link>
               </DropdownMenuItem>
+              {aceitaRetroativo && (
+                <DropdownMenuItem onClick={onRetroativos}>
+                  <Send className="mr-2 h-4 w-4" /> Enviar para quem já comentou
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={onDuplicar}>
                 <Copy className="mr-2 h-4 w-4" /> Duplicar
               </DropdownMenuItem>
@@ -183,6 +202,7 @@ const Automacoes = () => {
   const [loading, setLoading] = useState(true);
   const [ocupado, setOcupado] = useState(false);
   const [paraExcluir, setParaExcluir] = useState<InstagramAutomation | null>(null);
+  const [retroativos, setRetroativos] = useState<InstagramAutomation | null>(null);
 
   const carregar = async () => {
     try {
@@ -360,6 +380,7 @@ const Automacoes = () => {
                 onToggle={(ativa) => void alternar(a, ativa)}
                 onDuplicar={() => void duplicar(a)}
                 onExcluir={() => setParaExcluir(a)}
+                onRetroativos={() => setRetroativos(a)}
               />
             ))}
           </div>
@@ -371,6 +392,8 @@ const Automacoes = () => {
           </p>
         )}
       </div>
+
+      <RetroativosModal automacao={retroativos} onFechar={() => setRetroativos(null)} />
 
       <AlertDialog open={!!paraExcluir} onOpenChange={(aberto) => !aberto && setParaExcluir(null)}>
         <AlertDialogContent>
