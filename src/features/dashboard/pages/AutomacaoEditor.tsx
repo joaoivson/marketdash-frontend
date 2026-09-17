@@ -452,6 +452,7 @@ const AutomacaoEditor = () => {
                     {salva && salva.escopo === "post_especifico" ? (
                       <AnunciosVinculados
                         automacaoId={salva.id}
+                        mediaPrincipal={form.media_id}
                         palavras={form.palavras}
                         vinculados={salva.anuncios_vinculados}
                         onSalvo={(a) =>
