@@ -14,6 +14,8 @@ async function json<T>(res: Response): Promise<T> {
 export type AdminDashboard = {
   year: number;
   month: number;
+  /** Eco do que o backend realmente usou — a tela mostra isto, não o que pediu. */
+  periodo?: { livre: boolean; inicio?: string; fim?: string };
   mrr_net_cents: number;
   mrr_gross_cents: number;
   revenue_net_cents: number;
@@ -158,8 +160,24 @@ export const translateClientStatus = (status: string | null | undefined): string
   return STATUS_LABELS[status.toLowerCase()] || status;
 };
 
-export async function fetchAdminDashboard(year: number, month: number) {
-  return json<AdminDashboard>(await fetchWithAuth(`${base()}/dashboard?year=${year}&month=${month}`));
+/** Período livre do painel: `inicio`/`fim` vazios significam "desde sempre" e
+ *  "até hoje". `undefined` mantém o modo mensal de year/month. */
+export type PeriodoAdmin = { inicio?: string; fim?: string };
+
+export async function fetchAdminDashboard(
+  year: number,
+  month: number,
+  periodo?: PeriodoAdmin,
+) {
+  const qs = new URLSearchParams({ year: String(year), month: String(month) });
+  if (periodo) {
+    // `periodo=livre` é EXPLÍCITO: "todo o período" manda inicio e fim vazios,
+    // e sem o marcador o backend não teria como distinguir isso do modo mensal.
+    qs.set("periodo", "livre");
+    if (periodo.inicio) qs.set("inicio", periodo.inicio);
+    if (periodo.fim) qs.set("fim", periodo.fim);
+  }
+  return json<AdminDashboard>(await fetchWithAuth(`${base()}/dashboard?${qs}`));
 }
 
 export async function fetchAdminClients(params: Record<string, string | boolean | undefined> = {}) {
