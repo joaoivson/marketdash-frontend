@@ -74,6 +74,15 @@ function StatusBadge({ status }: { status: string }) {
 /** Padrão da lista: quem importa hoje. "Inativo" só quando o filtro for trocado. */
 const STATUS_PADRAO = "ativo,atrasado,cancelado_com_acesso";
 
+/** De qual card do dashboard este recorte veio. */
+const ROTULO_ORIGEM: Record<string, string> = {
+  mrr: "Compõem o MRR",
+  faturamento: "Pagaram no período",
+  churn: "Cancelaram no período",
+};
+
+const paraBR = (iso: string) => iso.split("-").reverse().join("/");
+
 const ALERT_FILTER_LABELS: Record<string, string> = {
   expiring_7d: "Vencendo em 7 dias",
   payment_failed: "Pagamento falhou",
@@ -131,8 +140,18 @@ function SortableHead({
 
 export default function AdminClientsPage() {
   const [params, setParams] = useSearchParams();
+  // Drill-down: veio de um card do dashboard (MRR, Faturamento ou Churn).
+  const origem = params.get("origem") || "";
+  const inicio = params.get("inicio") || "";
+  const fim = params.get("fim") || "";
+
   const [q, setQ] = useState(params.get("q") || "");
-  const [status, setStatus] = useState(params.get("status") || STATUS_PADRAO);
+  // No drill-down o status começa em "todos": o card de Churn é feito de
+  // clientes CANCELADOS, que o padrão da lista esconde — a tela mostraria
+  // "nenhum cliente" para um card com número.
+  const [status, setStatus] = useState(
+    params.get("status") || (origem ? "" : STATUS_PADRAO),
+  );
   // Ordem inicial de urgência: quem vence primeiro no topo.
   const [sortKey, setSortKey] = useState<SortKey>("next_payment");
   const [sortAsc, setSortAsc] = useState(true);
@@ -151,8 +170,11 @@ export default function AdminClientsPage() {
       payment_failed: params.get("payment_failed") === "1",
       never_connected: params.get("never_connected") === "1",
       no_login_10d: params.get("no_login_10d") === "1",
+      origem: origem || undefined,
+      inicio: inicio || undefined,
+      fim: fim || undefined,
     }),
-    [q, status, plan, params],
+    [q, status, plan, params, origem, inicio, fim],
   );
 
   useEffect(() => {
@@ -166,6 +188,14 @@ export default function AdminClientsPage() {
       .catch((e) => setError(e instanceof Error ? e.message : "Erro"))
       .finally(() => setLoading(false));
   }, [filters]);
+
+  const ehFaturamento = origem === "faturamento";
+  // A soma existe para CONFERIR: ela tem de bater com o card que foi clicado.
+  // Sem isso o drill-down mostra uma lista e deixa a pergunta "isso dá o total?"
+  // sem resposta — que é exatamente a pergunta que motivou a tela.
+  const somaDoPeriodo = ehFaturamento
+    ? rows.reduce((t, r) => t + (r.valor_no_periodo_cents || 0), 0)
+    : null;
 
   const sortedRows = useMemo(() => {
     const get = SORT_VALUE[sortKey];
@@ -245,6 +275,24 @@ export default function AdminClientsPage() {
             <SelectItem value="max">Max</SelectItem>
           </SelectContent>
         </Select>
+        {origem && (
+          <Badge className="gap-1.5 py-1.5 pl-2.5 pr-1.5">
+            {ROTULO_ORIGEM[origem] || origem}
+            {inicio && fim && ` · ${paraBR(inicio)} a ${paraBR(fim)}`}
+            <button
+              type="button"
+              aria-label="Remover o recorte do card e ver todos os clientes"
+              className="ml-0.5 rounded-full p-0.5 hover:bg-white/20"
+              onClick={() => {
+                const next = new URLSearchParams(params);
+                ["origem", "inicio", "fim"].forEach((k) => next.delete(k));
+                setParams(next);
+              }}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </Badge>
+        )}
         {(["expiring_7d", "payment_failed", "never_connected", "no_login_10d"] as const)
           .filter((k) => filters[k])
           .map((k) => (
@@ -264,6 +312,19 @@ export default function AdminClientsPage() {
               </button>
             </Badge>
           ))}
+        {origem && (
+          <span className="text-xs text-muted-foreground">
+            {rows.length} {rows.length === 1 ? "cliente" : "clientes"}
+            {somaDoPeriodo != null && (
+              <>
+                {" · soma "}
+                <strong className="tabular-nums text-foreground">
+                  {centsToBRL(somaDoPeriodo)}
+                </strong>
+              </>
+            )}
+          </span>
+        )}
         <Button variant="outline" size="sm" onClick={() => void exportCsv()}>
           <Download className="mr-1.5 h-4 w-4" />
           CSV
@@ -304,7 +365,7 @@ export default function AdminClientsPage() {
                   />
                   <SortableHead
                     className="w-[9%]"
-                    label="Total pago"
+                    label={ehFaturamento ? "Pago no período" : "Total pago"}
                     sortKey="total_paid_net_cents"
                     active={sortKey}
                     asc={sortAsc}
@@ -346,7 +407,13 @@ export default function AdminClientsPage() {
                       r.status === "cancelado_com_acesso" ? r.access_until : r.next_payment,
                     )}
                   </TableCell>
-                  <TableCell>{centsToBRL(r.total_paid_net_cents)}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {centsToBRL(
+                      ehFaturamento && r.valor_no_periodo_cents != null
+                        ? r.valor_no_periodo_cents
+                        : r.total_paid_net_cents,
+                    )}
+                  </TableCell>
                   <TableCell className="text-sm">
                     {r.last_login_at
                       ? new Date(r.last_login_at).toLocaleDateString("pt-BR")

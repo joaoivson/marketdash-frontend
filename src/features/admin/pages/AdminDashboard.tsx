@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Bar,
   BarChart,
@@ -57,14 +58,18 @@ function MetricCard({
   value,
   sub,
   badge,
+  para,
 }: {
   title: string;
   value: string;
   sub?: string;
   badge?: string;
+  /** Destino do drill-down. Com ele o card vira link para a lista de clientes
+   *  que compõem o número — sem ele, continua um card comum. */
+  para?: string;
 }) {
-  return (
-    <Card>
+  const conteudo = (
+    <Card className={para ? "transition-colors hover:border-primary/50 hover:bg-accent/30" : undefined}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
         {badge && (
@@ -76,8 +81,22 @@ function MetricCard({
       <CardContent>
         <div className="text-2xl font-semibold tracking-tight">{value}</div>
         {sub && <p className="mt-1 text-xs text-muted-foreground">{sub}</p>}
+        {para && (
+          <p className="mt-1.5 text-[11px] font-medium text-primary">ver quem compõe →</p>
+        )}
       </CardContent>
     </Card>
+  );
+
+  // Link de verdade (não onClick): abre em nova aba com ctrl/cmd, aparece na
+  // barra de status e funciona com teclado — o admin confere número, e conferir
+  // costuma ser comparar duas abas.
+  return para ? (
+    <Link to={para} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg">
+      {conteudo}
+    </Link>
+  ) : (
+    conteudo
   );
 }
 
@@ -134,6 +153,23 @@ export default function AdminDashboardPage() {
   // significa nada — a distinção precisa estar visível na tela.
   const badgePeriodo = rotuloDoPeriodo(modo);
 
+  // Destino do drill-down. O período viaja na URL para a lista somar exatamente
+  // o que o card somou — sem isso o admin clicaria num total de 12 meses e
+  // cairia numa lista do mês corrente, com números que não fecham.
+  const linkDoCard = (origem: "mrr" | "faturamento" | "churn") => {
+    const qs = new URLSearchParams({ origem });
+    if (periodo?.inicio) qs.set("inicio", periodo.inicio);
+    if (periodo?.fim) qs.set("fim", periodo.fim);
+    if (!periodo) {
+      // Modo mensal: manda as bordas do mês escolhido, para a lista não
+      // depender de adivinhar year/month.
+      const ultimo = new Date(Date.UTC(year, month, 0)).getUTCDate();
+      qs.set("inicio", `${year}-${String(month).padStart(2, "0")}-01`);
+      qs.set("fim", `${year}-${String(month).padStart(2, "0")}-${ultimo}`);
+    }
+    return `/admin/clients?${qs}`;
+  };
+
   const mrrRaw = trimLeadingEmpty(data.series?.mrr || []);
   const mrrSeries = mrrRaw.map((r) => ({ month: r.month, líquido: (r.net || 0) / 100 }));
   const mrrTrimmed = mrrSeries.length < (data.series?.mrr || []).length;
@@ -158,12 +194,14 @@ export default function AdminDashboardPage() {
         <MetricCard
           title="MRR"
           badge="hoje"
+          para={linkDoCard("mrr")}
           value={centsToBRL(data.mrr_net_cents)}
           sub={`líquido · bruto ${centsToBRL(data.mrr_gross_cents)}`}
         />
         <MetricCard
           title="Faturamento"
           badge={badgePeriodo}
+          para={linkDoCard("faturamento")}
           value={centsToBRL(data.revenue_net_cents)}
           sub={[
             `líquido · bruto ${centsToBRL(data.revenue_gross_cents)}`,
@@ -183,6 +221,7 @@ export default function AdminDashboardPage() {
         <MetricCard
           title="Churn"
           badge={badgePeriodo}
+          para={linkDoCard("churn")}
           value={`${data.churn_count} canceladas · ${((data.churn_rate || 0) * 100).toFixed(1)}%`}
         />
         <MetricCard
