@@ -826,3 +826,54 @@ Onde a seção divergir do código, o código vence.
 `CONTEXTO.md` descreve o código, não o que está renderizando em produção.
 
 ---
+
+## 2026-09-18 — Roteiros, rodada 2 (frontend)
+
+Só na `develop` (hml). Quadro item a item no repo do backend,
+`.claude/memoria/STATUS-roteiros-rodada2.md`.
+
+### O bug que dava para ver numa captura de tela
+
+Roteiro concluído mostrava os três passos com chip **verde** "Concluído" dentro
+de linhas pintadas de **vermelho**, sob "Os passos 1, 2, 3 já passaram. Ajuste
+as datas para agendar." A mesma linha dizia que deu certo e que deu errado.
+
+A causa: `noPassado` vinha de `roteiro.passos_no_passado`, e num roteiro que já
+rodou **toda** data está no passado — é o que "já rodou" significa. O backend
+continua reportando o campo (e está certo); o que mudou é a tela ignorá-lo
+quando `encerrado`. A prova da correção é justamente o campo continuar vindo:
+API devolve `passos_no_passado: [1]`, tela não mostra aviso nenhum.
+
+Três estados visuais que estavam colapsados em um:
+
+| Estado | Antes | Agora |
+|---|---|---|
+| Data vencida (rascunho) | vermelho | **âmbar** |
+| Travado / já enviado | só o cadeado | **linha apagada** + cadeado |
+| Falhou | chip vermelho | mantém — vermelho é só isto |
+
+### O ❓ do documento estava quebrado, mas por outro motivo
+
+"Passo já enviado precisa aparecer travado — sem ✕ e sem setas" era para estar
+pronto desde a rodada 1. Estava, para passo dentro de execução **ativa**.
+`p.travado` vem de `passos_intocaveis(execucao_ativa)`, e roteiro **concluído
+não tem execução ativa** — então `travado` vinha `false` e a linha oferecia
+setas e ✕ que o backend recusa com 409. Só apareceu ao abrir um roteiro
+concluído de verdade em tela.
+
+### Cuidado ao mexer no PassoEditor
+
+O overlay é `fixed inset-0 flex flex-col` com três faixas de altura fixa (barra,
+faixa de configuração) e **uma** que rola (blocos + prévia). Trocar o
+`flex-shrink-0` de qualquer faixa por outra coisa devolve o problema original: o
+`DialogContent` é `fixed` sem teto de altura e o Concluir sai da tela.
+
+`hojeBR()` e `proximaDataBR()` são exportados dali e usam `Intl` com
+`timeZone: "America/Sao_Paulo"` — **nunca** `new Date()` na mão para cortar dia
+civil: entre 21h e 0h BRT o dia UTC já virou.
+
+### Validado
+
+Playwright em 1440px e 390px, `scrollWidth === innerWidth` nas cinco telas.
+Ciclo duplicar → agendar → cancelar fecha: listagem volta a "Rascunho" com o
+Agendar de volta, e o banco confirma 0 mensagens pendentes.
