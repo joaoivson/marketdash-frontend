@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { Check, Copy, Loader2 } from "lucide-react";
+import { Check, Copy, Loader2, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -39,6 +40,10 @@ const SAIDA_COR = "hsl(0, 72%, 55%)";
 const num = (v?: number | null) => (v ?? 0).toLocaleString("pt-BR");
 /** `null` = a métrica não existe (sem denominador). "—" é a verdade; 0% não é. */
 const pct = (v?: number | null) => (v == null ? "—" : `${v.toFixed(1)}%`);
+
+/** "1 falha" / "2 falhas" — singular errado na tela dela é ruído. */
+const plural = (n: number, um: string, varios: string) =>
+  `${num(n)} ${n === 1 ? um : varios}`;
 
 /** Dia "2026-09-01" → "01/09", sem passar por Date (que jogaria para UTC). */
 const diaCurto = (iso: string) => {
@@ -233,6 +238,51 @@ export const VisaoGeralDaCampanha = ({ campanhaId }: { campanhaId: number }) => 
         />
         <Kpi rotulo="Participantes" valor={num(dados.participantes)} />
       </div>
+
+      {/*
+        ── Envios ──
+
+        LINHA, não card: um número solto de mensagens enviadas ao lado de
+        Cliques e Evasão misturaria aquisição com operação, e ela não saberia se
+        é muito ou pouco. Aqui a pergunta é outra — "alguma coisa deixou de
+        sair?" — e por isso a falha é o que ganha destaque.
+
+        Cobre o ponto cego do modelo sem retry: número desconectado uma tarde
+        inteira faz todos os passos daquele período falharem em sequência, e sem
+        isto ela só descobriria abrindo roteiro por roteiro.
+      */}
+      {dados.envios && (
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm">
+          <span className="flex items-center gap-1.5 font-medium text-foreground">
+            <Send className="h-3.5 w-3.5 text-muted-foreground" /> Envios
+          </span>
+          <span className="text-muted-foreground">
+            {plural(dados.envios.roteiros_agendados, "roteiro agendado", "roteiros agendados")}
+          </span>
+          <span className="text-muted-foreground/50">·</span>
+          <span className="text-muted-foreground">
+            {plural(dados.envios.mensagens_enviadas, "mensagem enviada", "mensagens enviadas")}
+            {" "}nos últimos {dados.periodo.dias} dias
+          </span>
+          {dados.envios.falhas > 0 && (
+            <>
+              <span className="text-muted-foreground/50">·</span>
+              {dados.envios.roteiro_com_falha_id ? (
+                <Link
+                  to={`/dashboard/grupos/${campanhaId}/roteiros/${dados.envios.roteiro_com_falha_id}`}
+                  className="font-semibold text-destructive underline-offset-2 hover:underline"
+                >
+                  {plural(dados.envios.falhas, "falha", "falhas")}
+                </Link>
+              ) : (
+                <span className="font-semibold text-destructive">
+                  {plural(dados.envios.falhas, "falha", "falhas")}
+                </span>
+              )}
+            </>
+          )}
+        </p>
+      )}
 
       {/* Ritmo: o grupo está crescendo ou sangrando? (spec §1.3c) */}
       <Card>

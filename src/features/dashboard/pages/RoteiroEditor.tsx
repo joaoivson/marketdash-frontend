@@ -559,6 +559,15 @@ const RoteiroEditor = () => {
                     const Icone = ICONES[p.tipo_conteudo] ?? FileText;
                     const IconeTempo = p.tipo_tempo === "ancora" ? Clock : Timer;
                     const atrasado = noPassado.has(i + 1);
+                    /*
+                      `p.travado` vem de `passos_intocaveis`, que olha a
+                      execução ATIVA — e roteiro concluído não tem nenhuma.
+                      Sem este `||`, o passo de um roteiro que já rodou
+                      aparecia com setas e ✕, oferecendo ações que o backend
+                      recusa com 409 (`roteiro_encerrado`). A trava é do
+                      roteiro inteiro depois que ele terminou.
+                    */
+                    const travado = p.travado || encerrado;
                     const aberto = expandido === p.id;
                     return (
                       <div
@@ -571,17 +580,17 @@ const RoteiroEditor = () => {
                           // Passo bloqueado é estado NEUTRO: linha apagada com
                           // cadeado. Antes ele só ganhava o ícone e herdava a
                           // cor da linha.
-                          p.travado && "opacity-60",
+                          travado && "opacity-60",
                         )}
                       >
                         <div className="flex items-center gap-2 px-2 py-2 sm:gap-3 sm:px-3">
                           <button
                             type="button"
-                            onClick={() => !p.travado && setEditando(i)}
-                            disabled={p.travado}
+                            onClick={() => !travado && setEditando(i)}
+                            disabled={travado}
                             className={cn(
                               "flex min-w-0 flex-1 items-center gap-3 rounded-lg px-1 py-1.5 text-left transition-colors",
-                              p.travado ? "cursor-default" : "hover:bg-accent/40",
+                              travado ? "cursor-default" : "hover:bg-accent/40",
                             )}
                             aria-label={`Editar passo ${i + 1}`}
                           >
@@ -606,7 +615,7 @@ const RoteiroEditor = () => {
                               >
                                 <IconeTempo className="h-3.5 w-3.5 flex-shrink-0" />
                                 <span className="truncate">{quandoDoPasso(p)}</span>
-                                {p.travado && <Lock className="h-3 w-3 flex-shrink-0" />}
+                                {travado && <Lock className="h-3 w-3 flex-shrink-0" />}
                               </span>
                               <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm text-foreground">
                                 <Icone className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
@@ -648,7 +657,7 @@ const RoteiroEditor = () => {
                             </button>
                           )}
 
-                          {!p.travado && (
+                          {!travado && (
                             <span className="flex flex-shrink-0 items-center">
                               <Button
                                 variant="ghost"
@@ -908,6 +917,9 @@ const RoteiroEditor = () => {
         <PassoEditor
           passo={passoEmEdicao}
           indice={editando}
+          total={passos.length}
+          nomeDoRoteiro={roteiro.nome}
+          quando={passoEmEdicao.quando}
           primeiro={editando === 0}
           grupos={grupos}
           templates={templates}

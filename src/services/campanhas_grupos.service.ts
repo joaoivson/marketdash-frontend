@@ -657,6 +657,23 @@ export type VisaoGeralDaCampanha = {
   participantes: number;
   grupos: EstadoDosGrupos;
   serie: PontoDaSerie[];
+  envios: EnviosDaCampanha;
+};
+
+/**
+ * Uma LINHA, não um card.
+ *
+ * Cobre o ponto cego do modelo sem retry: número desconectado uma tarde
+ * inteira faz todos os passos daquele período falharem em sequência, e sem
+ * isso ela só descobriria abrindo roteiro por roteiro.
+ */
+export type EnviosDaCampanha = {
+  /** Estado do AGORA — "tem coisa marcada para sair?". */
+  roteiros_agendados: number;
+  mensagens_enviadas: number;
+  falhas: number;
+  /** Roteiro da falha mais recente; a linha é clicável e leva até ele. */
+  roteiro_com_falha_id: number | null;
 };
 
 export type DiasDaVisaoGeral = 7 | 14 | 30;

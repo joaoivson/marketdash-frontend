@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, Download, Loader2, MoreVertical, Plus, Trash2,
+  AlertTriangle, ArrowDown, ArrowUp, Download, Loader2, Lock, MoreVertical, Plus,
+  Trash2,
 } from "lucide-react";
 
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
@@ -737,11 +738,20 @@ const CampanhaGrupoDetalhe = () => {
                     >
                       {v.participantes}/{v.teto}
                     </span>
-                    {/* Três estados, e o Select exibe a INTENÇÃO (dela ou do
-                        sistema), não o resultado — o resultado continua visível
-                        na coluna Ocupação. "Automático" é o caminho de volta:
-                        sem ele, cada marcação manual vira permanente e a opção
-                        "Reabertura automática" passa a mentir. */}
+                    {/*
+                      A coluna mostra o VALOR (Sim/Não), não o modo.
+
+                      "Automático" é o nome do mecanismo, não a resposta da
+                      pergunta que a coluna faz — ela olhava e não sabia se o
+                      grupo estava cheio. Agora o gatilho exibe o estado
+                      resolvido, com cadeado quando a escolha foi dela (e aí o
+                      sync não sobrescreve).
+
+                      As OPÇÕES continuam mostrando a intenção, com
+                      "Automático" como caminho de volta: sem ele cada marcação
+                      manual viraria permanente e "Reabertura automática"
+                      passaria a mentir.
+                    */}
                     <span className="flex w-32 flex-shrink-0 justify-center">
                       <Select
                         value={valorDoCheio(v)}
@@ -754,7 +764,14 @@ const CampanhaGrupoDetalhe = () => {
                           className="h-8 w-full"
                           aria-label={`Grupo ${v.nome} cheio`}
                         >
-                          <SelectValue />
+                          <SelectValue>
+                            <span className="flex items-center gap-1.5">
+                              {v.cheio ? "Sim" : "Não"}
+                              {v.cheio_override !== null && (
+                                <Lock className="h-3 w-3 text-muted-foreground" />
+                              )}
+                            </span>
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="auto">
@@ -862,14 +879,23 @@ const CampanhaGrupoDetalhe = () => {
                           className="h-9 w-[132px] flex-shrink-0"
                           aria-label={`Grupo ${v.nome} cheio`}
                         >
-                          <SelectValue />
+                          {/* Mesmos rótulos do desktop: a coluna responde a
+                              mesma pergunta nos dois tamanhos. */}
+                          <SelectValue>
+                            <span className="flex items-center gap-1.5">
+                              {v.cheio ? "Sim" : "Não"}
+                              {v.cheio_override !== null && (
+                                <Lock className="h-3 w-3 text-muted-foreground" />
+                              )}
+                            </span>
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="auto">
                             Automático{estaCheioPelaOcupacao(v) ? " (cheio)" : ""}
                           </SelectItem>
-                          <SelectItem value="sim">Cheio</SelectItem>
-                          <SelectItem value="nao">Com vaga</SelectItem>
+                          <SelectItem value="sim">Sim</SelectItem>
+                          <SelectItem value="nao">Não</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

@@ -1,16 +1,23 @@
 import { useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
+  AtSign,
   Check,
   FileText,
+  Film,
   Image as ImageIcon,
   Loader2,
+  Mic,
+  Paperclip,
   Plus,
   Settings2,
   ShoppingBag,
+  Square,
   Trash2,
   Upload,
+  Users,
   X,
 } from "lucide-react";
 
@@ -25,17 +32,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
-import { uploadImage } from "@/services/capture_site.service";
 import type { GrupoDaCampanha } from "@/services/campanhas_grupos.service";
 import {
   ACOES_DO_GRUPO,
+  BLOCOS_DE_MIDIA,
   UNIDADES,
+  uploadDeMidia,
   type AcaoGrupo,
   type BlocoIn,
   type PassoIn,
+  type TipoBloco,
   type TipoConteudo,
   type UnidadeOffset,
 } from "@/services/roteiros.service";
@@ -45,6 +60,15 @@ import { cn } from "@/shared/lib/utils";
 import { PreviaWhatsApp } from "./PreviaWhatsApp";
 
 const ATALHOS_OFFSET = [10, 30, 60];
+
+/** Hoje em Brasília, no formato do `<input type="date">`. */
+export const hojeBR = () =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 
 /** Amanhã em Brasília — passo novo não pode nascer já em vermelho. */
 export const proximaDataBR = () => {
@@ -106,6 +130,27 @@ const Bloco = ({ titulo, children }: { titulo: string; children: React.ReactNode
   </div>
 );
 
+/** Como cada tipo de bloco se apresenta e o que o seletor de arquivo aceita. */
+const TIPOS_DE_BLOCO = {
+  texto: { rotulo: "Texto", Icone: FileText, accept: "" },
+  imagem: { rotulo: "Imagem", Icone: ImageIcon, accept: "image/*" },
+  video: { rotulo: "Vídeo", Icone: Film, accept: "video/*" },
+  audio: { rotulo: "Áudio", Icone: Mic, accept: "audio/*" },
+  arquivo: { rotulo: "Arquivo", Icone: Paperclip, accept: "" },
+  oferta: { rotulo: "Oferta", Icone: ShoppingBag, accept: "" },
+} as const;
+
+/** Nome legível do arquivo a partir da URL — é tudo que guardamos dele. */
+const nomeDoArquivo = (url: string | null | undefined): string => {
+  if (!url) return "";
+  try {
+    const caminho = new URL(url).pathname;
+    return decodeURIComponent(caminho.split("/").pop() || "arquivo");
+  } catch {
+    return url.split("/").pop() || "arquivo";
+  }
+};
+
 /** Cartão de UM bloco de mensagem. */
 const CartaoDeBloco = ({
   bloco,
@@ -126,16 +171,21 @@ const CartaoDeBloco = ({
   const [enviando, setEnviando] = useState(false);
   const { toast } = useToast();
 
-  const escolherImagem = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const escolherArquivo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setEnviando(true);
     try {
-      const { url } = await uploadImage(file);
+      // `uploadDeMidia` checa o tamanho ANTES de subir: sem isso o arquivo
+      // grande sobe inteiro para tomar 400 no fim, e a tela fica parada sem
+      // explicar por quê.
+      const { url } = await uploadDeMidia(
+        bloco.tipo as "imagem" | "video" | "audio" | "arquivo", file,
+      );
       onMudar({ conteudo: url });
     } catch (err) {
       toast({
-        title: "Não foi possível enviar a imagem",
+        title: "Não foi possível enviar o arquivo",
         description: (err as Error).message,
         variant: "destructive",
       });
@@ -152,7 +202,7 @@ const CartaoDeBloco = ({
           {indice + 1}
         </span>
         <span className="mr-auto text-xs font-medium text-muted-foreground">
-          {bloco.tipo === "imagem" ? "Imagem" : "Texto"}
+          {TIPOS_DE_BLOCO[bloco.tipo]?.rotulo ?? bloco.tipo}
         </span>
         <Button
           variant="ghost"
@@ -194,13 +244,9 @@ const CartaoDeBloco = ({
       ) : (
         <div className="space-y-3">
           <div className="flex items-center gap-3">
-            {bloco.conteudo && (
+            {bloco.conteudo && bloco.tipo === "imagem" && (
               <div className="group relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl border border-border bg-muted">
-                <img
-                  src={bloco.conteudo}
-                  alt=""
-                  className="h-full w-full object-cover"
-                />
+                <img src={bloco.conteudo} alt="" className="h-full w-full object-cover" />
                 <button
                   type="button"
                   onClick={() => onMudar({ conteudo: null })}
@@ -211,35 +257,65 @@ const CartaoDeBloco = ({
                 </button>
               </div>
             )}
+            {bloco.conteudo && bloco.tipo === "video" && (
+              <video
+                src={bloco.conteudo}
+                controls
+                className="h-16 w-28 flex-shrink-0 rounded-xl border border-border bg-black object-cover"
+              />
+            )}
+            {/* Áudio ganha player de conferência: ela precisa OUVIR antes de
+                mandar para 900 pessoas. */}
+            {bloco.conteudo && bloco.tipo === "audio" && (
+              <audio src={bloco.conteudo} controls className="h-9 min-w-0 flex-1" />
+            )}
+            {bloco.conteudo && bloco.tipo === "arquivo" && (
+              <span className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs">
+                <Paperclip className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate text-foreground">
+                  {nomeDoArquivo(bloco.conteudo)}
+                </span>
+              </span>
+            )}
             <input
               ref={inputRef}
               type="file"
-              accept="image/*"
+              accept={TIPOS_DE_BLOCO[bloco.tipo]?.accept || undefined}
               className="hidden"
-              onChange={(e) => void escolherImagem(e)}
+              onChange={(e) => void escolherArquivo(e)}
             />
             <Button
               type="button"
               variant="outline"
               disabled={enviando}
               onClick={() => inputRef.current?.click()}
+              className="flex-shrink-0"
             >
               {enviando ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
                 <Upload className="mr-2 h-4 w-4" />
               )}
-              {bloco.conteudo ? "Trocar imagem" : "Adicionar imagem"}
+              {bloco.conteudo ? "Trocar" : "Escolher"} {TIPOS_DE_BLOCO[bloco.tipo]?.rotulo.toLowerCase()}
             </Button>
           </div>
-          <Textarea
-            value={bloco.legenda ?? ""}
-            onChange={(e) => onMudar({ legenda: e.target.value })}
-            maxLength={4000}
-            rows={2}
-            placeholder="Legenda (opcional)"
-            aria-label={`Legenda do bloco ${indice + 1}`}
-          />
+          {bloco.tipo === "audio" ? (
+            /* Nota de voz não carrega texto — o WhatsApp não tem legenda de
+               áudio. Quem quiser mandar um arquivo de áudio COM texto usa o
+               bloco de arquivo. */
+            <p className="text-xs text-muted-foreground">
+              Chega no grupo como nota de voz, não como arquivo anexado.
+            </p>
+          ) : (
+            <Textarea
+              value={bloco.legenda ?? ""}
+              onChange={(e) => onMudar({ legenda: e.target.value })}
+              maxLength={4000}
+              rows={2}
+              placeholder="Legenda (opcional)"
+              aria-label={`Legenda do bloco ${indice + 1}`}
+            />
+          )}
         </div>
       )}
     </div>
@@ -263,6 +339,9 @@ const CartaoDeBloco = ({
 export const PassoEditor = ({
   passo,
   indice,
+  total,
+  nomeDoRoteiro,
+  quando,
   primeiro,
   grupos,
   templates,
@@ -273,6 +352,17 @@ export const PassoEditor = ({
 }: {
   passo: PassoIn;
   indice: number;
+  /** Quantos passos o roteiro tem — a barra diz "Passo X de Y". */
+  total: number;
+  nomeDoRoteiro: string;
+  /**
+   * Horário RESOLVIDO do passo, vindo do backend.
+   *
+   * Passo relativo não tem como calcular o próprio horário aqui — ele depende
+   * da cadeia inteira. O carimbo da prévia usa este valor; sem ele mostraria a
+   * hora atual, que é o que fazia "21:23" não dizer nada.
+   */
+  quando?: string | null;
   primeiro: boolean;
   grupos: GrupoDaCampanha[];
   templates: Template[];
@@ -298,7 +388,7 @@ export const PassoEditor = ({
     onMudar({ blocos: copia });
   };
 
-  const adicionarBloco = (tipo: "texto" | "imagem") =>
+  const adicionarBloco = (tipo: TipoBloco) =>
     onMudar({
       blocos: [...passo.blocos, { tipo, conteudo: "", legenda: null, template_id: null }],
     });
@@ -344,166 +434,373 @@ export const PassoEditor = ({
 
   const acaoAtual = ACOES_DO_GRUPO.find((a) => a.valor === passo.acao);
 
+  /**
+   * Data e hora no passado travam o Concluir, com a marca no próprio campo.
+   *
+   * Antes só o "Agendar" barrava, dois passos depois — ela descobria o erro
+   * longe de onde o cometeu. O mínimo é o MINUTO SEGUINTE: aceitar o minuto
+   * corrente é aceitar um horário que vence enquanto ela termina de digitar.
+   */
+  const erroDeData = (() => {
+    if (passo.tipo_tempo !== "ancora") return null;
+    if (!passo.data_fixa || !passo.hora_fixa) {
+      return "Passo de hora fixa precisa de data e horário.";
+    }
+    const alvo = new Date(`${passo.data_fixa}T${passo.hora_fixa}`);
+    if (Number.isNaN(alvo.getTime())) return "Data ou horário inválido.";
+    const minimo = new Date();
+    minimo.setSeconds(0, 0);
+    minimo.setMinutes(minimo.getMinutes() + 1);
+    return alvo < minimo ? "Escolha uma data e horário no futuro." : null;
+  })();
+
+  /**
+   * "Marcar todos" só existe onde há texto.
+   *
+   * A menção viaja presa a um corpo de texto — o WhatsApp precisa de texto para
+   * pendurar o `mentionedJid`. Sem nenhum bloco com texto (ou legenda), o
+   * toggle fica desabilitado em vez de ficar ligado sem efeito, que é o que
+   * acontecia: ela ligava, a mensagem chegava sem marcar ninguém, e nada no
+   * sistema registrava o problema.
+   *
+   * Nota de voz não conta: não tem legenda.
+   */
+  const temTexto = passo.blocos.some(
+    (b) => b.tipo !== "audio"
+      && ((BLOCOS_DE_MIDIA.includes(b.tipo) ? b.legenda : b.conteudo) ?? "").trim() !== "",
+  );
+  const podeMarcarTodos = passo.tipo_conteudo === "mensagem" && temTexto;
+
+  /** A lista de grupos, dentro do popover de "Escolher grupos". */
+  const listaDeGrupos = (
+    <div className="max-h-72 space-y-1 overflow-y-auto p-1">
+      {grupos.length === 0 ? (
+        <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+          Esta campanha ainda não tem grupos.
+        </p>
+      ) : (
+        grupos.map((g) => (
+          <label
+            key={g.grupo_id}
+            className="flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-accent/40"
+          >
+            {/* Quadrado, não redondo: o `rounded-sm` do tema vira círculo numa
+                caixa de 16px e ela lê "escolha uma". */}
+            <CheckboxQuadrado
+              checked={selecionados.has(g.grupo_id)}
+              onCheckedChange={() => {
+                const proximo = new Set(selecionados);
+                if (proximo.has(g.grupo_id)) proximo.delete(g.grupo_id);
+                else proximo.add(g.grupo_id);
+                onMudar({ grupos_alvo: "selecao", grupos_alvo_ids: [...proximo] });
+              }}
+              aria-label={`Selecionar ${g.nome ?? "grupo"}`}
+            />
+            <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+              {g.nome ?? "(grupo sem nome)"}
+            </span>
+            <span className="flex-shrink-0 text-xs tabular-nums text-muted-foreground">
+              {g.participantes}
+            </span>
+          </label>
+        ))
+      )}
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
-      <header className="flex flex-shrink-0 items-center gap-3 border-b border-border px-4 py-3">
-        <h2 className="mr-auto text-base font-semibold text-foreground">
-          Passo {indice + 1}
-        </h2>
-        <Button variant="ghost" size="icon" onClick={onConcluir} aria-label="Fechar">
-          <X className="h-5 w-5" />
+      {/*
+        Barra superior fixa: Voltar · nome do roteiro · Passo X de Y · Concluir.
+
+        O editor não tinha Voltar em lugar nenhum — só um X no canto, que
+        também SALVAVA. E o Concluir ficava no rodapé, flutuando sobre o
+        conteúdo. Os dois agora ficam na mesma barra, que não rola.
+
+        Voltar e Concluir fazem a mesma coisa de propósito: salvar é implícito
+        no módulo inteiro, e um "descartar" só aqui divergiria do resto.
+      */}
+      <header className="flex flex-shrink-0 items-center gap-2 border-b border-border px-3 py-2.5 sm:px-4">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onConcluir}
+          disabled={erroDeData !== null}
+          className="flex-shrink-0"
+        >
+          <ArrowLeft className="mr-1.5 h-4 w-4" />
+          <span className="hidden sm:inline">Voltar</span>
+        </Button>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold leading-tight text-foreground">
+            {nomeDoRoteiro}
+          </p>
+          <p className="text-xs leading-tight tabular-nums text-muted-foreground">
+            Passo {indice + 1} de {total}
+            {primeiro && " · Início"}
+          </p>
+        </div>
+        <Button
+          size="sm"
+          onClick={onConcluir}
+          disabled={erroDeData !== null}
+          className="flex-shrink-0"
+        >
+          <Check className="mr-2 h-4 w-4" /> Concluir
         </Button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto grid w-full max-w-[1100px] gap-6 p-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          {/* ── Configuração ── */}
-          <div className="order-last min-w-0 space-y-6 lg:order-none">
-            <Bloco titulo="Quando">
-              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Quando">
-                <Radio
-                  rotulo="Hora fixa"
-                  ativo={passo.tipo_tempo === "ancora"}
-                  onClick={() =>
-                    onMudar({
-                      tipo_tempo: "ancora",
-                      hora_fixa: passo.hora_fixa || "08:00",
-                      // Semear a DATA junto: o modo relativo zera `data_fixa`,
-                      // e voltar para "Hora fixa" deixava o passo sem data —
-                      // salvar falhava por um campo que ela não viu sumir.
-                      data_fixa: passo.data_fixa || proximaDataBR(),
-                      offset_valor: null,
-                      offset_unidade: null,
-                    })
-                  }
-                />
-                <Radio
-                  rotulo="Depois do anterior"
-                  disabled={primeiro}
-                  ativo={passo.tipo_tempo === "relativo"}
-                  onClick={() =>
-                    onMudar({
-                      tipo_tempo: "relativo",
-                      offset_valor: passo.offset_valor ?? 10,
-                      offset_unidade: passo.offset_unidade ?? "minutos",
-                      hora_fixa: null,
-                      data_fixa: null,
-                    })
-                  }
-                />
-              </div>
+      {/*
+        ── Faixa de configuração ──
 
-              {passo.tipo_tempo === "ancora" ? (
-                <div className="flex flex-wrap items-end gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="passo-data" className="text-xs text-muted-foreground">
-                      Data
-                    </Label>
-                    <Input
-                      id="passo-data"
-                      type="date"
-                      className="w-40"
-                      value={passo.data_fixa ?? ""}
-                      onChange={(e) => onMudar({ data_fixa: e.target.value || null })}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="passo-hora" className="text-xs text-muted-foreground">
-                      Horário
-                    </Label>
-                    <Input
-                      id="passo-hora"
-                      type="time"
-                      className="w-32"
-                      value={passo.hora_fixa ?? ""}
-                      onChange={(e) => onMudar({ hora_fixa: e.target.value || null })}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Input
-                      type="number"
-                      min={0}
-                      max={100000}
-                      className="w-24"
-                      value={passo.offset_valor ?? 0}
-                      onChange={(e) =>
-                        onMudar({
-                          offset_valor: Math.max(
-                            0,
-                            Math.min(100000, Number(e.target.value) || 0),
-                          ),
-                        })
-                      }
-                      aria-label="Quanto tempo depois do passo anterior"
-                    />
-                    <Select
-                      value={passo.offset_unidade ?? "minutos"}
-                      onValueChange={(v) =>
-                        onMudar({ offset_unidade: v as UnidadeOffset })
-                      }
-                    >
-                      <SelectTrigger className="w-32" aria-label="Unidade">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {UNIDADES.map((u) => (
-                          <SelectItem key={u.valor} value={u.valor}>
-                            {u.rotulo}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <span className="text-sm text-muted-foreground">
-                      depois do passo anterior
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {ATALHOS_OFFSET.map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() =>
-                          onMudar({ offset_valor: m, offset_unidade: "minutos" })
-                        }
-                        className="min-h-[32px] rounded-full border border-border px-3 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-                      >
-                        +{m} min
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </Bloco>
+        QUANDO + O QUÊ + PARA QUEM + Marcar todos numa faixa HORIZONTAL, logo
+        abaixo da barra, sem rolagem. Antes esses campos empilhavam
+        verticalmente ocupando largura de bloco de conteúdo, e por isso a tela
+        rolava com espaço sobrando de lado.
 
-            <Bloco titulo="O quê">
-              <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="O quê">
-                {CONTEUDOS.map((c) => (
-                  <Radio
-                    key={c.valor}
-                    rotulo={c.rotulo}
-                    ativo={passo.tipo_conteudo === c.valor}
-                    onClick={() =>
-                      onMudar({
-                        tipo_conteudo: c.valor,
-                        // Ação é EXCLUSIVA: uma por passo, sem blocos.
-                        blocos:
-                          c.valor === "mensagem"
-                            ? passo.blocos.length
-                              ? passo.blocos
-                              : [{ tipo: "texto", conteudo: "" }]
-                            : [],
-                        acao:
-                          c.valor === "acao_grupo"
-                            ? (passo.acao ?? "renomear_grupo")
-                            : null,
+        Com a faixa fixa, a rolagem passa a existir só quando ela realmente
+        acrescenta mensagem.
+      */}
+      <div className="flex-shrink-0 border-b border-border bg-muted/30">
+        <div className="mx-auto flex max-w-[1100px] flex-wrap items-end gap-x-4 gap-y-3 px-3 py-2.5 sm:px-4">
+          {/* QUANDO */}
+          <div className="flex min-w-0 flex-wrap items-end gap-2">
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Quando
+              </Label>
+              <Select
+                value={passo.tipo_tempo}
+                onValueChange={(v) =>
+                  v === "ancora"
+                    ? onMudar({
+                        tipo_tempo: "ancora",
+                        hora_fixa: passo.hora_fixa || "08:00",
+                        // Semear a DATA junto: o modo relativo zera `data_fixa`,
+                        // e voltar para "Hora fixa" deixava o passo sem data —
+                        // salvar falhava por um campo que ela não viu sumir.
+                        data_fixa: passo.data_fixa || proximaDataBR(),
+                        offset_valor: null,
+                        offset_unidade: null,
                       })
+                    : onMudar({
+                        tipo_tempo: "relativo",
+                        offset_valor: passo.offset_valor ?? 10,
+                        offset_unidade: passo.offset_unidade ?? "minutos",
+                        hora_fixa: null,
+                        data_fixa: null,
+                      })
+                }
+              >
+                <SelectTrigger className="h-9 w-[152px]" aria-label="Quando">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ancora">Hora fixa</SelectItem>
+                  {/* O passo 1 marca o início do roteiro: não há "anterior". */}
+                  <SelectItem value="relativo" disabled={primeiro}>
+                    Depois do anterior
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {passo.tipo_tempo === "ancora" ? (
+              <>
+                <Input
+                  type="date"
+                  min={hojeBR()}
+                  aria-label="Data do passo"
+                  aria-invalid={erroDeData !== null}
+                  className={cn("h-9 w-[150px]", erroDeData && "border-destructive")}
+                  value={passo.data_fixa ?? ""}
+                  onChange={(e) => onMudar({ data_fixa: e.target.value || null })}
+                />
+                <Input
+                  type="time"
+                  aria-label="Horário do passo"
+                  aria-invalid={erroDeData !== null}
+                  className={cn("h-9 w-[110px]", erroDeData && "border-destructive")}
+                  value={passo.hora_fixa ?? ""}
+                  onChange={(e) => onMudar({ hora_fixa: e.target.value || null })}
+                />
+              </>
+            ) : (
+              <>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100000}
+                  className="h-9 w-20"
+                  value={passo.offset_valor ?? 0}
+                  onChange={(e) =>
+                    onMudar({
+                      offset_valor: Math.max(0, Math.min(100000, Number(e.target.value) || 0)),
+                    })
+                  }
+                  aria-label="Quanto tempo depois do passo anterior"
+                />
+                <Select
+                  value={passo.offset_unidade ?? "minutos"}
+                  onValueChange={(v) => onMudar({ offset_unidade: v as UnidadeOffset })}
+                >
+                  <SelectTrigger className="h-9 w-[118px]" aria-label="Unidade">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {UNIDADES.map((u) => (
+                      <SelectItem key={u.valor} value={u.valor}>
+                        {u.rotulo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="flex gap-1">
+                  {ATALHOS_OFFSET.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => onMudar({ offset_valor: m, offset_unidade: "minutos" })}
+                      className="h-9 rounded-full border border-border px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+                    >
+                      +{m}min
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* O QUÊ */}
+          <div className="space-y-1">
+            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              O quê
+            </Label>
+            <Select
+              value={passo.tipo_conteudo}
+              onValueChange={(v) =>
+                onMudar({
+                  tipo_conteudo: v as TipoConteudo,
+                  // Ação é EXCLUSIVA: uma por passo, sem blocos.
+                  blocos:
+                    v === "mensagem"
+                      ? passo.blocos.length
+                        ? passo.blocos
+                        : [{ tipo: "texto", conteudo: "" }]
+                      : [],
+                  acao: v === "acao_grupo" ? (passo.acao ?? "renomear_grupo") : null,
+                })
+              }
+            >
+              <SelectTrigger className="h-9 w-[148px]" aria-label="O quê">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CONTEUDOS.map((c) => (
+                  <SelectItem key={c.valor} value={c.valor}>
+                    {c.rotulo}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* PARA QUEM */}
+          <div className="space-y-1">
+            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              Para quem
+            </Label>
+            <div className="flex items-center gap-2">
+              <Select
+                value={passo.grupos_alvo}
+                onValueChange={(v) =>
+                  onMudar(
+                    v === "todos"
+                      ? { grupos_alvo: "todos", grupos_alvo_ids: null }
+                      : { grupos_alvo: "selecao" },
+                  )
+                }
+              >
+                <SelectTrigger className="h-9 w-[150px]" aria-label="Para quem">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos os grupos</SelectItem>
+                  <SelectItem value="selecao">Escolher grupos</SelectItem>
+                </SelectContent>
+              </Select>
+              {passo.grupos_alvo === "selecao" && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-9">
+                      <Users className="mr-2 h-4 w-4" />
+                      {selecionados.size === 0
+                        ? "Escolher"
+                        : `${selecionados.size} de ${grupos.length}`}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-0" align="start">
+                    {listaDeGrupos}
+                  </PopoverContent>
+                </Popover>
+              )}
+            </div>
+          </div>
+
+          {/* MARCAR TODOS */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex h-9 items-center gap-2 self-end">
+                  <AtSign
+                    className={cn(
+                      "h-4 w-4",
+                      podeMarcarTodos ? "text-muted-foreground" : "text-muted-foreground/40",
+                    )}
+                  />
+                  <Label
+                    htmlFor="passo-marcar-todos"
+                    className={cn(
+                      "text-sm",
+                      !podeMarcarTodos && "text-muted-foreground/50",
+                    )}
+                  >
+                    Marcar todos
+                  </Label>
+                  <Switch
+                    id="passo-marcar-todos"
+                    disabled={!podeMarcarTodos}
+                    checked={podeMarcarTodos && passo.marcar_todos === "sempre"}
+                    onCheckedChange={(v) =>
+                      onMudar({ marcar_todos: v ? "sempre" : "nunca" })
                     }
                   />
-                ))}
-              </div>
+                </div>
+              </TooltipTrigger>
+              {!podeMarcarTodos && (
+                <TooltipContent>
+                  Precisa de um bloco com texto ou legenda — a menção viaja
+                  presa a um corpo de texto.
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
+
+          {erroDeData && (
+            <p className="w-full text-xs text-destructive" role="alert">
+              {erroDeData}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto grid w-full max-w-[1100px] gap-6 p-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+          {/* ── Blocos de mensagem ── */}
+          <div className="order-last min-w-0 space-y-6 lg:order-none">
+            {/* Só os blocos de mensagem daqui para baixo: QUANDO, O QUÊ
+                e PARA QUEM subiram para a faixa fixa. */}
+            <div className="space-y-4">
 
               {passo.tipo_conteudo === "mensagem" && (
                 <div className="space-y-3">
@@ -520,13 +817,29 @@ export const PassoEditor = ({
                       }
                     />
                   ))}
+                  {/*
+                    Primeira versão fechada: texto · imagem · vídeo · áudio ·
+                    arquivo. Enquete, figurinha, GIF e contato ficam para
+                    depois — enquete não é mídia, é outro tipo de mensagem na
+                    API, com campos próprios: quando entrar, é bloco novo, não
+                    variação de texto.
+                  */}
                   <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" onClick={() => adicionarBloco("texto")}>
-                      <Plus className="mr-2 h-4 w-4" /> Texto
-                    </Button>
-                    <Button variant="outline" onClick={() => adicionarBloco("imagem")}>
-                      <ImageIcon className="mr-2 h-4 w-4" /> Imagem
-                    </Button>
+                    {(["texto", "imagem", "video", "audio", "arquivo"] as const).map(
+                      (tipo) => {
+                        const { rotulo, Icone } = TIPOS_DE_BLOCO[tipo];
+                        return (
+                          <Button
+                            key={tipo}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => adicionarBloco(tipo)}
+                          >
+                            <Icone className="mr-2 h-4 w-4" /> {rotulo}
+                          </Button>
+                        );
+                      },
+                    )}
                   </div>
                   {passo.blocos.length > 1 && (
                     <p className="text-xs text-muted-foreground">
@@ -617,69 +930,8 @@ export const PassoEditor = ({
                   </p>
                 </div>
               )}
-            </Bloco>
+            </div>
 
-            <Bloco titulo="Para quem">
-              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Para quem">
-                <Radio
-                  rotulo="Todos os grupos"
-                  ativo={passo.grupos_alvo === "todos"}
-                  onClick={() => onMudar({ grupos_alvo: "todos", grupos_alvo_ids: null })}
-                />
-                <Radio
-                  rotulo="Escolher grupos"
-                  ativo={passo.grupos_alvo === "selecao"}
-                  onClick={() => onMudar({ grupos_alvo: "selecao" })}
-                />
-              </div>
-
-              {passo.grupos_alvo === "selecao" && (
-                <div className="max-h-56 space-y-1 overflow-y-auto rounded-xl border border-border p-1">
-                  {grupos.length === 0 ? (
-                    <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-                      Esta campanha ainda não tem grupos.
-                    </p>
-                  ) : (
-                    grupos.map((g) => (
-                      <label
-                        key={g.grupo_id}
-                        className="flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-accent/40"
-                      >
-                        {/* Quadrado, não redondo: o `rounded-sm` do tema vira
-                            círculo numa caixa de 16px e ela lê "escolha uma". */}
-                        <CheckboxQuadrado
-                          checked={selecionados.has(g.grupo_id)}
-                          onCheckedChange={() => {
-                            const proximo = new Set(selecionados);
-                            if (proximo.has(g.grupo_id)) proximo.delete(g.grupo_id);
-                            else proximo.add(g.grupo_id);
-                            onMudar({ grupos_alvo_ids: [...proximo] });
-                          }}
-                          aria-label={`Selecionar ${g.nome ?? "grupo"}`}
-                        />
-                        <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                          {g.nome ?? "(grupo sem nome)"}
-                        </span>
-                        <span className="flex-shrink-0 text-xs tabular-nums text-muted-foreground">
-                          {g.participantes}
-                        </span>
-                      </label>
-                    ))
-                  )}
-                </div>
-              )}
-
-              <div className="flex items-center justify-between gap-3 pt-1">
-                <Label htmlFor="passo-marcar-todos">Marcar todos do grupo</Label>
-                <Switch
-                  id="passo-marcar-todos"
-                  checked={passo.marcar_todos === "sempre"}
-                  onCheckedChange={(v) =>
-                    onMudar({ marcar_todos: v ? "sempre" : "nunca" })
-                  }
-                />
-              </div>
-            </Bloco>
           </div>
 
           {/*
@@ -713,17 +965,13 @@ export const PassoEditor = ({
               <PreviaWhatsApp
                 blocos={blocosDaPrevia}
                 nomeDoGrupo={grupos[0]?.nome ?? undefined}
+                quando={quando}
               />
             )}
           </div>
         </div>
       </div>
 
-      <footer className="flex flex-shrink-0 items-center justify-end gap-2 border-t border-border p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-        <Button onClick={onConcluir} className="w-full sm:w-auto">
-          <Check className="mr-2 h-4 w-4" /> Concluir
-        </Button>
-      </footer>
     </div>
   );
 };
@@ -775,7 +1023,7 @@ const ParametroDaAcao = ({
     if (!file) return;
     setEnviando(true);
     try {
-      const { url } = await uploadImage(file);
+      const { url } = await uploadDeMidia("imagem", file);
       onMudar(url);
     } catch (err) {
       toast({
