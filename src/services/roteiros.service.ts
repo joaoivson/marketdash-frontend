@@ -116,7 +116,11 @@ export async function salvarConfigEnvio(config: ConfigEnvio): Promise<ConfigEnvi
 export type TipoTempo = "ancora" | "relativo";
 /** O passo é container de MENSAGEM (N blocos), uma OFERTA, ou uma AÇÃO. */
 export type TipoConteudo = "mensagem" | "oferta" | "acao_grupo";
-export type TipoBloco = "texto" | "imagem" | "audio" | "video" | "oferta";
+export type TipoBloco = "texto" | "imagem" | "audio" | "video" | "arquivo" | "oferta";
+/** Os que a tela deixa adicionar — `oferta` segue reservado. */
+export const BLOCOS_DA_TELA = ["texto", "imagem", "video", "audio", "arquivo"] as const;
+/** Blocos cujo `conteudo` é a URL de um arquivo, não texto. */
+export const BLOCOS_DE_MIDIA: readonly TipoBloco[] = ["imagem", "video", "audio", "arquivo"];
 export type AcaoGrupo = "renomear_grupo" | "alterar_descricao" | "alterar_imagem";
 export type UnidadeOffset = "segundos" | "minutos" | "horas";
 export type GruposAlvo = "todos" | "selecao";
@@ -206,6 +210,16 @@ export type ExecucaoResumo = {
   enviados: number;
   erros: number;
   pulados: number;
+  /**
+   * As duas metades de `pendente`, separadas pelo backend.
+   *
+   * O banco tem UM status para duas situações muito diferentes, e somá-las
+   * fazia o card dizer "Na fila 3" com o roteiro agendado para daqui a 25
+   * minutos. A diferença importa no diagnóstico: "na fila há 20 minutos" é
+   * problema, "agendada para daqui a 25" é o roteiro funcionando.
+   */
+  agendadas: number;
+  na_fila: number;
   proxima_execucao_em: string | null;
   concluido_em: string | null;
 };
@@ -227,6 +241,12 @@ export type RoteiroDetalhe = Roteiro & {
   passos: PassoOut[];
   avisos: string[];
   passos_no_passado: number[];
+  /**
+   * O roteiro já rodou: a tela abre em LEITURA e some com o destaque de data
+   * vencida. Roteiro concluído não é rascunho quebrado — não há data a ajustar
+   * nem agendamento a fazer.
+   */
+  encerrado: boolean;
 };
 
 export type PreviewPasso = {
@@ -253,6 +273,43 @@ export type ResultadoAgendamento =
   | { agendada: true; execucao: ExecucaoEnvio }
   | { agendada: false; avisos: string[] };
 
+/** Tetos de upload por tipo, em MB — espelho de `UPLOAD_MB_*` do backend.
+ *
+ * Existe do lado do cliente para a checagem acontecer ANTES do upload: sem
+ * ela, o arquivo grande sobe inteiro para tomar 400 no fim, e a tela fica
+ * parada sem explicar por quê.
+ *
+ * ⚠️ Espelho manual: mudou aqui, muda em `app/core/config.py` no mesmo commit.
+ */
+export const LIMITE_MB: Record<string, number> = {
+  imagem: 5,
+  audio: 16,
+  video: 16,
+  arquivo: 25,
+};
+
+/** Sobe um arquivo de bloco e devolve a URL pública que o WAHA vai baixar. */
+export const uploadDeMidia = async (
+  tipo: "imagem" | "video" | "audio" | "arquivo",
+  file: File,
+): Promise<{ url: string }> => {
+  const teto = LIMITE_MB[tipo];
+  if (file.size > teto * 1024 * 1024) {
+    throw new Error(`Arquivo muito grande. O limite para ${tipo} é ${teto} MB.`);
+  }
+  const corpo = new FormData();
+  corpo.append("file", file);
+  const res = await fetchWithAuth(
+    getApiUrl(`/api/v1/uploads/midia?tipo=${tipo}`),
+    { method: "POST", body: corpo },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Não foi possível enviar o arquivo.");
+  }
+  return res.json();
+};
+
 /**
  * Erro que a tela precisa DESTRINCHAR, não só exibir: "algum passo está no
  * passado" num roteiro de 22 não diz onde clicar.
@@ -260,7 +317,12 @@ export type ResultadoAgendamento =
 export class ErroDeRoteiro extends Error {
   constructor(
     message: string,
-    readonly codigo: "passos_no_passado" | "passo_ja_enviado" | "execucao_ja_ativa" | null,
+    readonly codigo:
+      | "passos_no_passado"
+      | "passo_ja_enviado"
+      | "execucao_ja_ativa"
+      | "roteiro_encerrado"
+      | null,
     readonly passos: number[] = [],
   ) {
     super(message);

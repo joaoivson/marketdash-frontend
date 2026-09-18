@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  CalendarClock, Copy, ListOrdered, Loader2, Pencil, Plus, Send,
+  CalendarClock, Copy, ListOrdered, Loader2, Pencil, Plus, Send, XCircle,
 } from "lucide-react";
 
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ResponsiveModal } from "@/components/shared/ResponsiveModal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EnvioRapidoModal } from "@/components/whatsapp/EnvioRapidoModal";
 import { useToast } from "@/hooks/use-toast";
 import {
+  cancelar as cancelarExecucao,
   criarRoteiro,
   duplicarRoteiro,
   listarRoteiros,
@@ -62,22 +68,53 @@ const CHIP_DA_EXECUCAO: Record<StatusExecucao, { rotulo: string; classe: string 
   },
 };
 
-const StatusRoteiroBadge = ({ roteiro }: { roteiro: Roteiro }) => {
-  const execucao = roteiro.execucao_ativa ?? roteiro.ultima_execucao;
-  if (!execucao) return <Badge variant="secondary">Rascunho</Badge>;
-  const chip = CHIP_DA_EXECUCAO[execucao.status];
-  const comFalha = execucao.status === "concluida" && execucao.erros + execucao.pulados > 0;
-  return (
-    <Badge
-      className={cn(
-        comFalha
-          ? "border-orange-500/25 bg-orange-500/10 text-orange-500 hover:bg-orange-500/10"
-          : chip.classe,
-      )}
-    >
-      {comFalha ? "Concluído com falhas" : chip.rotulo}
-    </Badge>
-  );
+/**
+ * O estado do roteiro, derivado UMA vez — o chip e as ações precisam concordar.
+ *
+ * Antes cada um derivava por conta: o chip dizia "Concluído" e a linha ainda
+ * oferecia "Agendar" em azul primário. Já rodou — agendar de novo não é a
+ * próxima ação, e o botão mais pesado da linha estava oferecendo a coisa errada.
+ */
+type EstadoDoRoteiro =
+  | "rascunho" | "agendado" | "enviando" | "pausado"
+  | "concluido" | "concluido_com_falhas" | "falhou" | "cancelado";
+
+const estadoDoRoteiro = (r: Roteiro): EstadoDoRoteiro => {
+  const execucao = r.execucao_ativa ?? r.ultima_execucao;
+  if (!execucao) return "rascunho";
+  switch (execucao.status) {
+    case "agendada": return "agendado";
+    case "enviando": return "enviando";
+    case "pausada": return "pausado";
+    case "falhou": return "falhou";
+    // Cancelar devolve o roteiro para rascunho — ela pode agendar de novo.
+    case "cancelada": return "rascunho";
+    case "concluida":
+      return execucao.erros + execucao.pulados > 0
+        ? "concluido_com_falhas" : "concluido";
+  }
+};
+
+/** Estados em que o roteiro já rodou: só Duplicar. Refazer é duplicar. */
+const ENCERRADOS: EstadoDoRoteiro[] = ["concluido", "concluido_com_falhas", "falhou"];
+
+const CHIP_DO_ESTADO: Record<EstadoDoRoteiro, { rotulo: string; classe: string }> = {
+  rascunho: { rotulo: "Rascunho", classe: "border-border bg-muted text-muted-foreground hover:bg-muted" },
+  agendado: CHIP_DA_EXECUCAO.agendada,
+  enviando: CHIP_DA_EXECUCAO.enviando,
+  pausado: CHIP_DA_EXECUCAO.pausada,
+  concluido: CHIP_DA_EXECUCAO.concluida,
+  concluido_com_falhas: {
+    rotulo: "Concluído com falhas",
+    classe: "border-orange-500/25 bg-orange-500/10 text-orange-500 hover:bg-orange-500/10",
+  },
+  falhou: CHIP_DA_EXECUCAO.falhou,
+  cancelado: CHIP_DA_EXECUCAO.cancelada,
+};
+
+const StatusRoteiroBadge = ({ estado }: { estado: EstadoDoRoteiro }) => {
+  const chip = CHIP_DO_ESTADO[estado];
+  return <Badge className={cn(chip.classe)}>{chip.rotulo}</Badge>;
 };
 
 /** Aba "Roteiros" da campanha: sequência de passos que a campanha dispara. */
@@ -97,6 +134,7 @@ export const RoteirosDaCampanha = ({
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
+  const [paraCancelar, setParaCancelar] = useState<Roteiro | null>(null);
   const [modalNovo, setModalNovo] = useState(false);
   const [modalEnvio, setModalEnvio] = useState(false);
   const [nome, setNome] = useState("");
@@ -151,16 +189,43 @@ export const RoteirosDaCampanha = ({
       setRoteiros((atual) => [copia, ...atual]);
       toast({
         title: "Roteiro duplicado",
-        description: "Ajuste as datas do novo lançamento.",
+        description: "Ajuste as datas antes de agendar.",
       });
-      // A cópia carrega as datas do lançamento PASSADO — nasce em vermelho e
-      // sem poder agendar. Abrir o ajuste em bloco é o passo seguinte
-      // obrigatório, e é onde a duplicação fica barata: 4 ou 5 datas em vez de
-      // 22 mensagens reagendadas.
-      abrirEditor(copia.id, true);
+      // Vai direto para o ROTEIRO, não para o modal de datas.
+      //
+      // Abrir "Ajustar datas" por cima de uma tela em branco mostrava uma linha
+      // solta no meio do nada — num roteiro com um passo âncora e o resto
+      // relativo, o modal tinha exatamente uma linha para exibir. No roteiro
+      // ela ajusta no contexto, vendo a sequência inteira; "Ajustar datas"
+      // continua no rodapé como atalho para quem tem 22 passos.
+      abrirEditor(copia.id);
     } catch (e) {
       toast({
         title: "Não foi possível duplicar",
+        description: (e as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  const confirmarCancelamento = async () => {
+    if (!paraCancelar) return;
+    const execucao = paraCancelar.execucao_ativa;
+    if (!execucao) return;
+    setOcupado(true);
+    try {
+      await cancelarExecucao(execucao.id);
+      setParaCancelar(null);
+      await carregar();
+      toast({
+        title: "Agendamento cancelado",
+        description: "O roteiro voltou para rascunho.",
+      });
+    } catch (e) {
+      toast({
+        title: "Não foi possível cancelar",
         description: (e as Error).message,
         variant: "destructive",
       });
@@ -221,7 +286,14 @@ export const RoteirosDaCampanha = ({
         </Card>
       ) : (
         <div className="space-y-3">
-          {roteiros.map((r) => (
+          {roteiros.map((r) => {
+          const estado = estadoDoRoteiro(r);
+          const encerrado = ENCERRADOS.includes(estado);
+          // Agendado e pausado podem ser cancelados; enviando também (para o
+          // que falta). Encerrado, não: já rodou.
+          const cancelavel = ["agendado", "pausado", "enviando"].includes(estado)
+            && r.execucao_ativa != null;
+          return (
             <Card key={r.id}>
               <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
                 <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10">
@@ -237,7 +309,7 @@ export const RoteirosDaCampanha = ({
                     >
                       {r.nome}
                     </button>
-                    <StatusRoteiroBadge roteiro={r} />
+                    <StatusRoteiroBadge estado={estado} />
                   </div>
                   <p className="flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
                     <span className="tabular-nums">{rotuloPassos(r.total_passos)}</span>
@@ -247,10 +319,27 @@ export const RoteirosDaCampanha = ({
                   </p>
                 </div>
 
+                {/*
+                  Cada estado oferece SÓ a ação que faz sentido nele:
+
+                    Rascunho              Editar · Duplicar · Agendar
+                    Agendado / Pausado    Editar · Duplicar · Cancelar
+                    Enviando              Duplicar · Cancelar envio
+                    Concluído / Falhou    Duplicar
+
+                  Concluído e falhou não têm Editar: editar um roteiro que já
+                  rodou faz a tela deixar de refletir o que foi realmente
+                  enviado — ela muda o texto do passo 2 e passa a ver uma
+                  mensagem que nunca saiu naquela execução. Abrir continua
+                  funcionando, em leitura (o nome é clicável). Refazer é
+                  duplicar: o registro da execução anterior fica intacto.
+                */}
                 <div className="flex flex-wrap items-center gap-2 sm:flex-shrink-0">
-                  <Button variant="outline" size="sm" onClick={() => abrirEditor(r.id)}>
-                    <Pencil className="mr-2 h-3.5 w-3.5" /> Editar
-                  </Button>
+                  {!encerrado && estado !== "enviando" && (
+                    <Button variant="outline" size="sm" onClick={() => abrirEditor(r.id)}>
+                      <Pencil className="mr-2 h-3.5 w-3.5" /> Editar
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -259,18 +348,28 @@ export const RoteirosDaCampanha = ({
                   >
                     <Copy className="mr-2 h-3.5 w-3.5" /> Duplicar
                   </Button>
-                  {/* "Agendar" sai da linha enquanto houver execução ativa —
-                      clicar de novo criaria uma segunda e o grupo receberia
-                      tudo duplicado. Volta se ela cancelar o agendamento. */}
-                  {!r.execucao_ativa && (
+                  {estado === "rascunho" && (
                     <Button size="sm" onClick={() => abrirEditor(r.id)}>
                       <CalendarClock className="mr-2 h-3.5 w-3.5" /> Agendar
+                    </Button>
+                  )}
+                  {cancelavel && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={ocupado}
+                      onClick={() => setParaCancelar(r)}
+                      className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <XCircle className="mr-2 h-3.5 w-3.5" />
+                      {estado === "enviando" ? "Cancelar envio" : "Cancelar agendamento"}
                     </Button>
                   )}
                 </div>
               </CardContent>
             </Card>
-          ))}
+          );
+          })}
         </div>
       )}
 
@@ -310,6 +409,36 @@ export const RoteirosDaCampanha = ({
           </Button>
         </div>
       </ResponsiveModal>
+
+      {/*
+        Confirmação porque é irreversível: cancelar TIRA da fila o que ainda
+        não saiu. O que já chegou nos grupos fica — é o registro do que
+        aconteceu, e apagá-lo faria a tela deixar de refletir a realidade.
+      */}
+      <AlertDialog
+        open={paraCancelar !== null}
+        onOpenChange={(aberto) => !aberto && setParaCancelar(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancelar o agendamento?</AlertDialogTitle>
+            <AlertDialogDescription>
+              As mensagens que ainda não saíram são removidas da fila e o
+              roteiro volta para rascunho. O que já foi enviado continua no
+              histórico.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Voltar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => void confirmarCancelamento()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Cancelar agendamento
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <EnvioRapidoModal
         open={modalEnvio}

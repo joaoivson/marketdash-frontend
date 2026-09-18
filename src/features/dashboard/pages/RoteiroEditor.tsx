@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   Clock,
+  Copy,
   FileText,
   Loader2,
   Lock,
@@ -44,6 +45,7 @@ import {
   agendarRoteiro,
   ajustarDatas,
   definirPassos,
+  duplicarRoteiro,
   obterRoteiro,
   previewRoteiro,
   reenviarPasso,
@@ -213,6 +215,16 @@ const ROTULO_DO_STATUS = {
   falhou: "Falhou",
 } as const;
 
+/** Título do painel de execução — o mesmo vocabulário do chip da listagem. */
+const TITULO_DA_EXECUCAO = (
+  e: { status: string; enviados: number; erros: number; pulados: number },
+  encerrado: boolean,
+): string => {
+  if (!encerrado) return e.status === "enviando" ? "Enviando" : "Agendado";
+  if (e.status === "falhou" || e.enviados === 0) return "Falhou";
+  return e.erros + e.pulados > 0 ? "Concluído com falhas" : "Concluído";
+};
+
 const RoteiroEditor = () => {
   const { campanhaId: campanhaParam, roteiroId: roteiroParam } = useParams();
   const campanhaId = Number(campanhaParam);
@@ -246,6 +258,7 @@ const RoteiroEditor = () => {
   const [preview, setPreview] = useState<PreviewRoteiro | null>(null);
   const [agendando, setAgendando] = useState(false);
   const [avisosParaConfirmar, setAvisosParaConfirmar] = useState<string[] | null>(null);
+  const [duplicando, setDuplicando] = useState(false);
 
   const voltar = `/dashboard/grupos/${campanhaId}?tab=roteiros`;
   const execucao = roteiro?.execucao_ativa ?? null;
@@ -253,7 +266,20 @@ const RoteiroEditor = () => {
   //  ela vê o que falhou. `execucao_ativa` já é null aí; a última é a que
   //  carrega as linhas com falha (o backend reabre a execução no reenvio).
   const execucaoDoStatus = roteiro?.execucao_ativa ?? roteiro?.ultima_execucao ?? null;
-  const noPassado = new Set(roteiro?.passos_no_passado ?? []);
+  /**
+   * O roteiro já rodou: a tela abre em LEITURA.
+   *
+   * Roteiro concluído NÃO é rascunho quebrado. Ele terminou — não há data para
+   * ajustar nem agendamento a fazer. Sem isto, os três passos apareciam com
+   * chip verde "Concluído" dentro de linhas pintadas de vermelho, sob o aviso
+   * "Os passos 1, 2, 3 já passaram. Ajuste as datas para agendar." A mesma
+   * linha dizia que deu certo e que deu errado.
+   */
+  const encerrado = roteiro?.encerrado ?? false;
+  //  Destaque de data vencida só onde faz sentido: roteiro em rascunho ou
+  //  recém-duplicado. Num roteiro encerrado TODA data está no passado — é o
+  //  que "já rodou" significa.
+  const noPassado = new Set(encerrado ? [] : (roteiro?.passos_no_passado ?? []));
 
   const aplicar = useCallback((r: RoteiroDetalhe) => {
     setRoteiro(r);
@@ -437,7 +463,31 @@ const RoteiroEditor = () => {
   const passoEmEdicao = editando != null ? passos[editando] : undefined;
   // Sem useMemo: `noPassado` já é derivado de `roteiro` a cada render, então
   // memoizar aqui só criaria uma lista de dependências que mente.
-  const podeAgendar = !execucao && passos.length > 0 && noPassado.size === 0;
+  const podeAgendar =
+    !execucao && !encerrado && passos.length > 0 && noPassado.size === 0;
+  //  Roteiro encerrado não tem execução ATIVA, mas o painel direito precisa
+  //  mostrar o que aconteceu — senão ele cairia no ramo da prévia e ofereceria
+  //  agendar um roteiro que já rodou.
+  const resumoDaExecucao = execucao ?? (encerrado ? roteiro?.ultima_execucao ?? null : null);
+
+  const duplicarEAbrir = async () => {
+    if (!roteiro) return;
+    setDuplicando(true);
+    try {
+      const copia = await duplicarRoteiro(roteiro.id);
+      // Vai direto para a cópia: os passos de data fixa nascem marcados e o
+      // Agendar fica travado até ela corrigir, no contexto da sequência.
+      navigate(`/dashboard/grupos/${campanhaId}/roteiros/${copia.id}`);
+    } catch (e) {
+      toast({
+        title: "Não foi possível duplicar",
+        description: (e as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setDuplicando(false);
+    }
+  };
 
   if (carregando) {
     return (
@@ -490,9 +540,12 @@ const RoteiroEditor = () => {
                     <Clock className="h-6 w-6 text-primary" />
                   </span>
                   <p className="text-sm font-medium text-foreground">Nenhum passo ainda</p>
+                  {/* O texto antigo ("o primeiro passo tem data e hora
+                      próprias") dava a entender que só o primeiro tem data, e
+                      não é verdade: qualquer passo pode ter data fixa. */}
                   <p className="max-w-sm text-sm text-muted-foreground">
-                    O primeiro passo tem data e hora próprias — os seguintes podem
-                    sair alguns minutos depois dele.
+                    O passo 1 marca o início do roteiro, com data e hora própria.
+                    Os seguintes podem sair depois dele ou em data própria.
                   </p>
                   <Button onClick={adicionar}>
                     <Plus className="mr-2 h-4 w-4" /> Adicionar passo
@@ -512,7 +565,13 @@ const RoteiroEditor = () => {
                         key={p.chave}
                         className={cn(
                           i > 0 && "border-t border-border",
-                          atrasado && "bg-destructive/5",
+                          // Vermelho é EXCLUSIVO de falha (o chip de status
+                          // abaixo). Data vencida é aviso, não erro: âmbar.
+                          atrasado && "bg-amber-500/5",
+                          // Passo bloqueado é estado NEUTRO: linha apagada com
+                          // cadeado. Antes ele só ganhava o ícone e herdava a
+                          // cor da linha.
+                          p.travado && "opacity-60",
                         )}
                       >
                         <div className="flex items-center gap-2 px-2 py-2 sm:gap-3 sm:px-3">
@@ -530,7 +589,7 @@ const RoteiroEditor = () => {
                               className={cn(
                                 "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold tabular-nums",
                                 atrasado
-                                  ? "bg-destructive/20 text-destructive"
+                                  ? "bg-amber-500/20 text-amber-500"
                                   : "bg-primary/15 text-primary",
                               )}
                             >
@@ -542,7 +601,7 @@ const RoteiroEditor = () => {
                               <span
                                 className={cn(
                                   "flex min-w-0 items-center gap-1.5 text-xs",
-                                  atrasado ? "text-destructive" : "text-muted-foreground",
+                                  atrasado ? "text-amber-500" : "text-muted-foreground",
                                 )}
                               >
                                 <IconeTempo className="h-3.5 w-3.5 flex-shrink-0" />
@@ -685,16 +744,20 @@ const RoteiroEditor = () => {
                   </div>
                 )}
 
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={adicionar} disabled={salvando}>
-                    <Plus className="mr-2 h-4 w-4" /> Adicionar passo
-                  </Button>
-                  {passos.some((p) => p.tipo_tempo === "ancora") && (
-                    <Button variant="outline" onClick={() => setAjustandoDatas(true)}>
-                      <CalendarClock className="mr-2 h-4 w-4" /> Ajustar datas
+                {/* Roteiro que já rodou abre em LEITURA: nada de adicionar
+                    passo nem ajustar data — não há data a ajustar. */}
+                {!encerrado && (
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" onClick={adicionar} disabled={salvando}>
+                      <Plus className="mr-2 h-4 w-4" /> Adicionar passo
                     </Button>
-                  )}
-                </div>
+                    {passos.some((p) => p.tipo_tempo === "ancora") && (
+                      <Button variant="outline" onClick={() => setAjustandoDatas(true)}>
+                        <CalendarClock className="mr-2 h-4 w-4" /> Ajustar datas
+                      </Button>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -703,21 +766,36 @@ const RoteiroEditor = () => {
           <div className="min-w-0 lg:sticky lg:top-4 lg:self-start">
             <Card>
               <CardContent className="space-y-4 p-4">
-                {execucao ? (
+                {resumoDaExecucao ? (
                   <div className="space-y-3">
                     <p className="flex items-center gap-2 text-sm font-medium text-foreground">
-                      <Check className="h-4 w-4 text-emerald-500" />
-                      {execucao.status === "enviando" ? "Enviando" : "Agendado"}
+                      {encerrado && (resumoDaExecucao.erros + resumoDaExecucao.pulados) > 0 ? (
+                        <AlertTriangle className="h-4 w-4 text-orange-500" />
+                      ) : (
+                        <Check className="h-4 w-4 text-emerald-500" />
+                      )}
+                      {TITULO_DA_EXECUCAO(resumoDaExecucao, encerrado)}
                     </p>
                     <div className="space-y-1.5 text-sm">
-                      {[
-                        ["Enviadas", execucao.enviados],
-                        ["Na fila", Math.max(
-                          execucao.total - execucao.enviados - execucao.erros - execucao.pulados,
-                          0,
-                        )],
-                        ["Falhas", execucao.erros + execucao.pulados],
-                      ].map(([rotulo, valor]) => (
+                      {/*
+                        "Agendadas" e "Na fila" são coisas diferentes, e somá-las
+                        fazia o card dizer "Na fila 3" com o roteiro marcado para
+                        21:40 e o relógio em 21:15. A diferença importa no
+                        diagnóstico: "na fila há 20 minutos" é problema,
+                        "agendada para daqui a 25" é o roteiro funcionando.
+
+                        Linhas zeradas somem: num roteiro concluído "Agendadas 0"
+                        e "Na fila 0" são ruído.
+                      */}
+                      {([
+                        ["Enviadas", resumoDaExecucao.enviados],
+                        ["Agendadas", resumoDaExecucao.agendadas],
+                        ["Na fila", resumoDaExecucao.na_fila],
+                        ["Falhas", resumoDaExecucao.erros + resumoDaExecucao.pulados],
+                      ] as [string, number][])
+                        .filter(([rotulo, valor]) =>
+                          valor > 0 || rotulo === "Enviadas" || rotulo === "Falhas")
+                        .map(([rotulo, valor]) => (
                         <div key={rotulo} className="flex items-center justify-between gap-3">
                           <span className="text-muted-foreground">{rotulo}</span>
                           <span className="font-semibold tabular-nums text-foreground">
@@ -727,8 +805,9 @@ const RoteiroEditor = () => {
                       ))}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Passos que ainda não saíram podem ser editados — o resto do
-                      roteiro reagenda sozinho.
+                      {encerrado
+                        ? "Este roteiro já rodou. Para mandar de novo, duplique."
+                        : "Passos que ainda não saíram podem ser editados — o resto do roteiro reagenda sozinho."}
                     </p>
                   </div>
                 ) : passos.length === 0 ? (
@@ -736,7 +815,9 @@ const RoteiroEditor = () => {
                     Adicione ao menos um passo para ver a prévia.
                   </p>
                 ) : noPassado.size > 0 ? (
-                  <p className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
+                  /* Âmbar, não vermelho: data vencida num rascunho é aviso, não
+                     falha. Vermelho ficou reservado para o que deu errado. */
+                  <p className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-600 dark:text-amber-500">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
                     {noPassado.size === 1
                       ? `O passo ${[...noPassado][0]} já passou.`
@@ -798,14 +879,28 @@ const RoteiroEditor = () => {
           <Button asChild variant="outline" className="flex-1 sm:ml-auto sm:flex-none">
             <Link to={voltar}>Voltar</Link>
           </Button>
-          <Button
-            className="flex-1 sm:flex-none"
-            disabled={!podeAgendar || agendando || salvando}
-            onClick={() => void executarAgendamento(false)}
-          >
-            {agendando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {execucao ? "Já agendado" : "Agendar"}
-          </Button>
+          {/* Roteiro encerrado não oferece Agendar: já rodou, e agendar de novo
+              não é a próxima ação. A próxima ação é DUPLICAR — o registro da
+              execução anterior fica intacto. */}
+          {encerrado ? (
+            <Button
+              className="flex-1 sm:flex-none"
+              disabled={duplicando}
+              onClick={() => void duplicarEAbrir()}
+            >
+              {duplicando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <Copy className="mr-2 h-4 w-4" /> Duplicar
+            </Button>
+          ) : (
+            <Button
+              className="flex-1 sm:flex-none"
+              disabled={!podeAgendar || agendando || salvando}
+              onClick={() => void executarAgendamento(false)}
+            >
+              {agendando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {execucao ? "Já agendado" : "Agendar"}
+            </Button>
+          )}
         </div>
       </div>
 
